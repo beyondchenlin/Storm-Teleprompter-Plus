@@ -77,6 +77,7 @@ class ReadingEmphasisTestServer extends WsServer {
   final _heldResponses = <WsMessage>[];
   int _requestId = 0;
   bool holdPatchResponses = false;
+  final heldResponseTypes = <WsMessageType>{};
 
   @override
   Stream<WsRequest> get requests => _requests.stream;
@@ -96,8 +97,10 @@ class ReadingEmphasisTestServer extends WsServer {
 
   @override
   void respond(String clientId, WsMessage message) {
-    if (holdPatchResponses &&
-        message.type == WsMessageType.settingsReadingEmphasisPatchResponse) {
+    if ((holdPatchResponses &&
+            message.type ==
+                WsMessageType.settingsReadingEmphasisPatchResponse) ||
+        heldResponseTypes.contains(message.type)) {
       _heldResponses.add(message);
       return;
     }
@@ -108,6 +111,17 @@ class ReadingEmphasisTestServer extends WsServer {
     holdPatchResponses = false;
     final held = List<WsMessage>.from(_heldResponses);
     _heldResponses.clear();
+    for (final response in held) {
+      respond('test-client', response);
+    }
+  }
+
+  void releaseResponses(WsMessageType type) {
+    heldResponseTypes.remove(type);
+    final held = _heldResponses
+        .where((message) => message.type == type)
+        .toList();
+    _heldResponses.removeWhere((message) => message.type == type);
     for (final response in held) {
       respond('test-client', response);
     }
