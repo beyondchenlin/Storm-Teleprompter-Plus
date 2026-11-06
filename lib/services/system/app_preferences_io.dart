@@ -63,9 +63,15 @@ class AppPreferences {
       return sharedPreferences.setString(key, value);
     }
 
-    _values![key] = value;
-    final snapshot = Map<String, String>.from(_values);
-    final write = _pendingWrite.then((_) => _writeSnapshot(snapshot));
+    final write = _pendingWrite.then((_) async {
+      // 在队列执行时基于最后成功写入的值合并，失败值不能进入其他保存。
+      final values = _values!;
+      final snapshot = Map<String, String>.from(values)..[key] = value;
+      await _writeSnapshot(snapshot);
+      values
+        ..clear()
+        ..addAll(snapshot);
+    });
     _pendingWrite = write.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
@@ -79,7 +85,7 @@ class AppPreferences {
     await file.parent.create(recursive: true);
     final temporaryFile = File('${file.path}.tmp');
     await temporaryFile.writeAsString(jsonEncode(snapshot), flush: true);
-    if (await file.exists()) await file.delete();
+    // 同目录替换保留旧文件直到新文件就绪；Windows 原生重命名支持替换。
     await temporaryFile.rename(file.path);
   }
 }

@@ -7,6 +7,7 @@ import 'package:storm_teleprompter_plus/services/text_parser.dart';
 import 'package:storm_teleprompter_plus/utils/constants.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/auto_speed_picker.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/teleprompter_text_layer.dart';
+import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_emphasis_text.dart';
 
 /// 构建足够长且具有不同字号、换行的真实正文层。
 Widget _layer(
@@ -168,14 +169,22 @@ void main() {
     final controller = ScrollController();
     await tester.pumpWidget(_layer(controller, speed: 0));
     await tester.pump();
-    final richText = tester
-        .widgetList<RichText>(find.byType(RichText))
-        .firstWhere((w) => w.text.toPlainText().contains('正常正文'));
-    final spans = (richText.text as TextSpan).children!.cast<TextSpan>();
-    for (final span in spans) {
-      expect(span.style!.decoration, TextDecoration.none);
-      expect(span.style!.fontWeight, FontWeight.w400);
-      expect(span.style!.color!.a, 1);
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((w) => w.painter)
+        .whereType<ReadingTextPainter>()
+        .firstWhere((p) => p.layout.line.text.contains('正常正文'));
+    for (final glyph in painter.layout.graphemes) {
+      final actual = painter.presentation.appearanceFor(
+        glyph,
+        painter.layout.geometry,
+      );
+      expect(actual.style.decoration, TextDecoration.none);
+      expect(actual.style.fontWeight, FontWeight.w400);
+      expect(actual.style.color!.a, 1);
+      expect(actual.scale, 1);
+      expect(actual.isCurrent, isFalse);
+      expect(actual.isRead, isFalse);
     }
     controller.jumpTo(123);
     await tester.pumpWidget(_layer(controller, speed: 0, index: 200));

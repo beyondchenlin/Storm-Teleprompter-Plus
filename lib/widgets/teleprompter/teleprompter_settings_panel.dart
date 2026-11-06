@@ -6,6 +6,7 @@ import '../../providers/teleprompter_provider.dart';
 import '../../services/font_service.dart';
 import '../../theme/app_colors.dart';
 import '../common/app_color_picker_dialog.dart';
+import '../settings/reading_emphasis_settings_section.dart';
 
 /// 提词器设置面板（抽屉形式）
 ///
@@ -85,7 +86,12 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         _buildMirrorTextSwitch(context, provider, settings),
                         _buildExtraBoldSlider(context, provider, settings),
-                        const SizedBox(height: 4),
+                        const Divider(height: 24),
+
+                        // 播放中仍可调整；四项新设置始终读取全局状态。
+                        _buildSectionTitle(context, '阅读提示'),
+                        const SizedBox(height: 8),
+                        const ReadingEmphasisSettingsSection(),
                         if (!settings.isContinuousScroll)
                           _buildEmphasisSection(context, provider, settings),
                         const Divider(height: 24),
@@ -412,17 +418,30 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
     AppSettings settings, {
     bool enabled = true,
   }) {
-    return _buildSlider(
-      context,
-      icon: Icons.space_bar,
-      title: '字间距',
-      value: settings.letterSpacing,
-      min: -2,
-      max: 10,
-      divisions: 12,
-      displayFormatter: (v) => '${v.toStringAsFixed(1)}px',
-      onChanged: enabled ? (v) => provider.setLetterSpacing(v) : null,
-      onReset: enabled ? () => provider.setLetterSpacing(0) : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSlider(
+          context,
+          icon: Icons.space_bar,
+          title: '字间距',
+          value: settings.letterSpacing < 0 ? 0 : settings.letterSpacing,
+          min: 0,
+          max: 10,
+          divisions: 10,
+          displayFormatter: (v) => '${v.toStringAsFixed(1)}px',
+          onChanged: enabled ? (v) => provider.setLetterSpacing(v) : null,
+          onReset: enabled ? () => provider.setLetterSpacing(0) : null,
+        ),
+        if (settings.letterSpacing < 0)
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 4),
+            child: Text(
+              '负字距按0处理，保证放大空间',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ),
+      ],
     );
   }
 
@@ -642,17 +661,17 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
         const Padding(
           padding: EdgeInsets.only(left: 4, top: 4, bottom: 4),
           child: Text(
-            '强调效果',
+            '其他阅读标记',
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ),
-        // 已读字变淡（默认开）
+        // 已读着色与当前字突出相互独立。
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.opacity, size: 20),
-          title: const Text('已读字变淡', style: TextStyle(fontSize: 14)),
+          title: const Text('标记已读文字', style: TextStyle(fontSize: 14)),
           subtitle: const Text(
-            '已读过的字符变为半透明（默认开）',
+            '已读过的文字使用上方设置的已读颜色',
             style: TextStyle(fontSize: 12),
           ),
           value: settings.grayReadChars,

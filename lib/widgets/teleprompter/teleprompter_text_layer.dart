@@ -2,16 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import '../../models/app_settings.dart';
 import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
 import 'continuous_scroll_driver.dart';
 import 'measured_line_delegate.dart';
+import 'reading_emphasis_text.dart';
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
 ///
-/// - [SliverList.builder] 只构建可见正文行，控制大型稿件 Widget 数量。
-/// - 用 [TextPainter] 按当前宽度和文字样式缓存每个逻辑行的实际高度。
+/// - [SliverVariedExtentList] 只构建可见正文段落，控制大型稿件的控件数量。
+/// - 按固定的最大突出空间缓存每个逻辑行的实际高度；当前字只影响绘制。
 /// - 当前字滚动定位使用累计实际高度，避免长行换行、富文本字号、空行导致
 ///   当前字偏离阅读区域框中心行。
 class TeleprompterTextLayer extends StatefulWidget {
@@ -42,6 +44,10 @@ class TeleprompterTextLayer extends StatefulWidget {
   final bool highlightCurrentChar;
   final bool defaultBold;
   final bool underlineCurrentChar;
+  final bool readingEmphasisEnabled;
+  final int currentCharColor;
+  final int readCharColor;
+  final double currentCharScale;
 
   const TeleprompterTextLayer({
     super.key,
@@ -71,6 +77,10 @@ class TeleprompterTextLayer extends StatefulWidget {
     this.highlightCurrentChar = false,
     this.defaultBold = false,
     this.underlineCurrentChar = false,
+    this.readingEmphasisEnabled = true,
+    this.currentCharColor = AppSettings.defaultCurrentCharColor,
+    this.readCharColor = AppSettings.defaultReadCharColor,
+    this.currentCharScale = AppSettings.defaultCurrentCharScale,
   });
 
   @override
@@ -121,6 +131,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   @override
   void dispose() {
     _continuousDriver.dispose();
+    _navigationLayout?.dispose();
+    _glyphCache.dispose();
     super.dispose();
   }
 
@@ -137,6 +149,33 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   final List<double> _lineHeights = <double>[];
   final List<double> _lineTops = <double>[];
   double _contentHeight = 0;
+  final ReadingGlyphPainterCache _glyphCache = ReadingGlyphPainterCache();
+  ReadingTextLayout? _navigationLayout;
+  int _metricsBuildCount = 0;
+
+  @visibleForTesting
+  int get debugMetricsBuildCount => _metricsBuildCount;
+
+  ReadingTextGeometry get _textGeometry => ReadingTextGeometry(
+    fontSize: widget.fontSize,
+    lineHeight: widget.lineHeight,
+    letterSpacing: widget.letterSpacing,
+    fontFamily: widget.teleprompterFontFamily,
+    defaultBold: widget.defaultBold,
+  );
+
+  ReadingTextPresentation get _textPresentation => ReadingTextPresentation(
+    currentIndex: widget.currentIndex,
+    continuous: widget.continuous,
+    enabled: widget.readingEmphasisEnabled,
+    grayReadChars: widget.grayReadChars,
+    highlightCurrentChar: widget.highlightCurrentChar,
+    underlineCurrentChar: widget.underlineCurrentChar,
+    textColor: widget.textColor,
+    currentCharColor: widget.currentCharColor,
+    readCharColor: widget.readCharColor,
+    currentCharScale: widget.currentCharScale,
+  );
 
   @override
   void didUpdateWidget(TeleprompterTextLayer oldWidget) {
@@ -255,25 +294,27 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     return lastNonEmpty;
   }
 
-  int _charOffsetInLine(int lineIndex, int rawIndex) {
-    final chars = widget.lines[lineIndex].characters;
-    if (chars.isEmpty) return 0;
-
-    for (var i = 0; i < chars.length; i++) {
-      if (rawIndex <= chars[i].rawIndex) return i;
-    }
-    return chars.length - 1;
-  }
-
-  TextPainter _layoutLinePainter(
+  ReadingTextLayout _layoutForLine(
     ScriptLine line,
     double textWidth,
     TextDirection textDirection,
   ) {
-    return TextPainter(
-      text: TextSpan(children: _buildTextSpans(line, forMeasurement: true)),
-      textDirection: textDirection,
-    )..layout(maxWidth: textWidth);
+    final existing = _navigationLayout;
+    final geometry = _textGeometry;
+    if (existing != null &&
+        identical(existing.line, line) &&
+        existing.width == textWidth &&
+        existing.direction == textDirection &&
+        existing.geometry == geometry) {
+      return existing;
+    }
+    existing?.dispose();
+    return _navigationLayout = ReadingTextLayout(
+      line: line,
+      geometry: geometry,
+      width: textWidth,
+      direction: textDirection,
+    );
   }
 
   double _visualRowCenterForRawIndex(
@@ -283,38 +324,30 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     TextDirection textDirection,
   ) {
     final line = widget.lines[lineIndex];
-    if (line.characters.isEmpty) {
-      return _lineHeights[lineIndex] / 2;
-    }
-
-    final painter = _layoutLinePainter(line, textWidth, textDirection);
-    final charOffset = _charOffsetInLine(lineIndex, rawIndex);
-    final selectionEnd = (charOffset + 1).clamp(0, line.characters.length);
-    final boxes = painter.getBoxesForSelection(
-      TextSelection(baseOffset: charOffset, extentOffset: selectionEnd),
-    );
-    final caretOffset = painter.getOffsetForCaret(
-      TextPosition(offset: charOffset),
-      Rect.zero,
-    );
-    final sampleY = boxes.isNotEmpty
-        ? (boxes.first.top + boxes.first.bottom) / 2
-        : caretOffset.dy;
-
-    var rowCenter = caretOffset.dy + painter.preferredLineHeight / 2;
-    for (final metric in painter.computeLineMetrics()) {
-      final top = metric.baseline - metric.ascent;
-      final bottom = top + metric.height;
-      if (sampleY >= top - 0.5 && sampleY <= bottom + 0.5) {
-        rowCenter = top + metric.height / 2;
-        break;
-      }
-    }
-
-    painter.dispose();
-    return (rowCenter + _lineVerticalPadding)
+    if (line.characters.isEmpty) return _lineHeights[lineIndex] / 2;
+    final layout = _layoutForLine(line, textWidth, textDirection);
+    return (layout.placementForRawIndex(rawIndex)!.row.centerY +
+            _lineVerticalPadding)
         .clamp(0.0, _lineHeights[lineIndex])
         .toDouble();
+  }
+
+  /// The measured current visual row, including the paragraph's small padding.
+  /// Mixed-size manuscript text can be taller than the ordinary-body estimate.
+  double get currentVisualRowHeight {
+    if (widget.lines.isEmpty || _lastTextWidth == null) {
+      return _textGeometry.emptyHeight + _lineVerticalPadding * 2;
+    }
+    final line = widget.lines[_findLineForRawIndex(widget.currentIndex)];
+    if (line.characters.isEmpty) {
+      return _textGeometry.emptyHeight + _lineVerticalPadding * 2;
+    }
+    return _layoutForLine(
+          line,
+          _lastTextWidth!,
+          _lastTextDirection!,
+        ).placementForRawIndex(widget.currentIndex)!.row.height +
+        _lineVerticalPadding * 2;
   }
 
   void _ensureLineMetrics(double textWidth, TextDirection textDirection) {
@@ -329,6 +362,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
       return;
     }
 
+    _navigationLayout?.dispose();
+    _navigationLayout = null;
+    _metricsBuildCount++;
     _lineHeights.clear();
     _lineTops.clear();
 
@@ -352,13 +388,16 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     TextDirection textDirection,
   ) {
     if (line.characters.isEmpty) {
-      return widget.fontSize * widget.lineHeight + _lineVerticalPadding * 2;
+      return _textGeometry.emptyHeight + _lineVerticalPadding * 2;
     }
-
-    final painter = _layoutLinePainter(line, textWidth, textDirection);
-
-    final height = painter.height + _lineVerticalPadding * 2;
-    painter.dispose();
+    final layout = ReadingTextLayout(
+      line: line,
+      geometry: _textGeometry,
+      width: textWidth,
+      direction: textDirection,
+    );
+    final height = layout.height + _lineVerticalPadding * 2;
+    layout.dispose();
     return height;
   }
 
@@ -400,18 +439,13 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     final line = widget.lines[lineIndex];
     if (line.characters.isEmpty) return null;
 
-    final painter = _layoutLinePainter(line, textWidth, textDirection);
+    final layout = _layoutForLine(line, textWidth, textDirection);
     final localY = (contentOffset - _lineTops[lineIndex] - _lineVerticalPadding)
-        .clamp(0.0, painter.height)
+        .clamp(0.0, layout.height)
         .toDouble();
-    final localX = x.clamp(0.0, textWidth).toDouble();
-    final position = painter.getPositionForOffset(Offset(localX, localY));
-    painter.dispose();
-
-    final charOffset = position.offset
-        .clamp(0, line.characters.length - 1)
-        .toInt();
-    return line.characters[charOffset].rawIndex;
+    return layout.rawIndexForOffset(
+      Offset(x.clamp(0.0, textWidth).toDouble(), localY),
+    );
   }
 
   /// 把匀速模式当前视口中心映射为按行模式的恢复锚点。
@@ -451,49 +485,30 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     final line = widget.lines[safeLine];
     if (line.characters.isEmpty) return null;
 
-    final painter = _layoutLinePainter(line, textWidth, textDirection);
-    final charOffset = _charOffsetInLine(safeLine, widget.currentIndex);
-    final selectionEnd = (charOffset + 1).clamp(0, line.characters.length);
-    final boxes = painter.getBoxesForSelection(
-      TextSelection(baseOffset: charOffset, extentOffset: selectionEnd),
-    );
-    final caretOffset = painter.getOffsetForCaret(
-      TextPosition(offset: charOffset),
-      Rect.zero,
-    );
-    final sampleY = boxes.isNotEmpty
-        ? (boxes.first.top + boxes.first.bottom) / 2
-        : caretOffset.dy;
-    var currentMetricHeight = painter.preferredLineHeight;
-    var currentRowCenter = caretOffset.dy + currentMetricHeight / 2;
-    for (final metric in painter.computeLineMetrics()) {
-      final top = metric.baseline - metric.ascent;
-      final bottom = top + metric.height;
-      if (sampleY >= top - 0.5 && sampleY <= bottom + 0.5) {
-        currentMetricHeight = metric.height;
-        currentRowCenter = top + metric.height / 2;
-        break;
-      }
+    final layout = _layoutForLine(line, textWidth, textDirection);
+    final placement = layout.placementForRawIndex(widget.currentIndex)!;
+    final currentX = placement.cell.center.dx;
+    final targetRow = layout.rows.indexOf(placement.row) + direction.sign;
+    if (targetRow >= 0 && targetRow < layout.rows.length) {
+      return layout.rawIndexForOffset(
+        Offset(currentX, layout.rows[targetRow].centerY),
+      );
     }
-    final currentX = boxes.isNotEmpty
-        ? (boxes.first.left + boxes.first.right) / 2
-        : caretOffset.dx;
-    painter.dispose();
-
-    final targetContentY =
-        _lineTops[safeLine] +
-        currentRowCenter +
-        direction * currentMetricHeight;
-    final targetLine = _findLineForContentOffset(targetContentY);
-    final target = widget.lines[targetLine];
-    if (target.characters.isEmpty) return null;
-
-    return _rawIndexForContentOffset(
-      targetContentY,
-      textWidth,
-      textDirection,
-      currentX,
-    );
+    // Crossing a logical paragraph boundary uses the adjacent visual row's
+    // actual height, not the old row's height (important for mixed-size text).
+    var targetLine = safeLine + direction.sign;
+    while (targetLine >= 0 && targetLine < widget.lines.length) {
+      final target = widget.lines[targetLine];
+      if (target.characters.isNotEmpty) {
+        final targetLayout = _layoutForLine(target, textWidth, textDirection);
+        final row = direction > 0
+            ? targetLayout.rows.first
+            : targetLayout.rows.last;
+        return targetLayout.rawIndexForOffset(Offset(currentX, row.centerY));
+      }
+      targetLine += direction.sign;
+    }
+    return null;
   }
 
   void scrollToCurrentChar({bool animate = true}) {
@@ -655,6 +670,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         final viewportWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : screenWidth;
+        final viewportHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : screenHeight;
         final horizontalPadding = _horizontalPadding(viewportWidth);
         final textWidth = _textWidthForViewport(viewportWidth);
 
@@ -679,7 +697,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
                     : widget.physics ?? const ClampingScrollPhysics(),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: SizedBox(height: _topPad(screenHeight)),
+                    child: SizedBox(height: _topPad(viewportHeight)),
                   ),
                   SliverPadding(
                     padding: EdgeInsets.symmetric(
@@ -690,7 +708,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
                             child: Center(
                               child: Padding(
                                 padding: EdgeInsets.only(
-                                  top: screenHeight * 0.2,
+                                  top: viewportHeight * 0.2,
                                 ),
                                 child: const Text(
                                   '暂无内容',
@@ -707,14 +725,14 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
                                 _lineHeights[index],
                             delegate: MeasuredLineDelegate(
                               (context, index) =>
-                                  _buildLine(widget.lines[index], textWidth),
+                                  _buildLine(index, textWidth, viewportHeight),
                               count: widget.lines.length,
                               contentHeight: _contentHeight,
                             ),
                           ),
                   ),
                   SliverToBoxAdapter(
-                    child: SizedBox(height: _bottomPad(screenHeight)),
+                    child: SizedBox(height: _bottomPad(viewportHeight)),
                   ),
                 ],
               ),
@@ -725,100 +743,27 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     );
   }
 
-  List<TextSpan> _buildTextSpans(
-    ScriptLine line, {
-    required bool forMeasurement,
-  }) {
-    final textColor = widget.textColor != 0
-        ? Color(widget.textColor)
-        : const Color(0xFFFFFFFF);
-    final baseWeight = widget.defaultBold ? FontWeight.w700 : FontWeight.w400;
-    final boldWeight = widget.defaultBold ? FontWeight.w900 : FontWeight.w700;
-
-    return line.characters.map((char) {
-      final isRead =
-          !widget.continuous &&
-          !forMeasurement &&
-          char.rawIndex <= widget.currentIndex;
-      final isCurrent =
-          !widget.continuous &&
-          !forMeasurement &&
-          char.rawIndex == widget.currentIndex;
-      final doHighlight = isCurrent && widget.highlightCurrentChar;
-      final effectiveFontSize =
-          char.fontSizePx ?? widget.fontSize * (char.fontSizeRatio ?? 1.0);
-      final effectiveTextColor = char.textColor != null
-          ? Color(char.textColor!)
-          : textColor;
-      final effectiveReadColor = widget.grayReadChars
-          ? effectiveTextColor.withValues(alpha: 0.6)
-          : effectiveTextColor;
-
-      final style = TextStyle(
-        fontSize: effectiveFontSize,
-        height: widget.lineHeight,
-        fontWeight: doHighlight
-            ? boldWeight
-            : (char.bold ? boldWeight : baseWeight),
-        fontStyle: char.italic ? FontStyle.italic : FontStyle.normal,
-        decoration: (isCurrent && widget.underlineCurrentChar)
-            ? TextDecoration.underline
-            : (char.underline ? TextDecoration.underline : TextDecoration.none),
-        decorationColor: effectiveTextColor,
-        color: doHighlight
-            ? effectiveTextColor
-            : (isRead ? effectiveReadColor : effectiveTextColor),
-        fontFamily: widget.teleprompterFontFamily.isNotEmpty
-            ? widget.teleprompterFontFamily
-            : null,
-        letterSpacing: widget.letterSpacing,
-        backgroundColor: char.backgroundColor != null
-            ? Color(char.backgroundColor!).withValues(alpha: 0.3)
-            : null,
-      );
-
-      return TextSpan(text: char.char, style: style);
-    }).toList();
-  }
-
-  Widget _buildLine(ScriptLine line, double textWidth) {
+  Widget _buildLine(int index, double textWidth, double viewportHeight) {
+    final line = widget.lines[index];
     if (line.characters.isEmpty) {
       return SizedBox(
-        height: widget.fontSize * widget.lineHeight + _lineVerticalPadding * 2,
+        height: _textGeometry.emptyHeight + _lineVerticalPadding * 2,
       );
     }
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: _lineVerticalPadding),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTapDown: (details) {
-            final painter = _layoutLinePainter(
-              line,
-              textWidth,
-              Directionality.of(context),
-            );
-            final position = painter.getPositionForOffset(
-              details.localPosition,
-            );
-            painter.dispose();
-
-            final charOffset = position.offset
-                .clamp(0, line.characters.length - 1)
-                .toInt();
-            widget.onCharTap?.call(line.characters[charOffset].rawIndex);
-          },
-          child: RepaintBoundary(
-            child: RichText(
-              text: TextSpan(
-                children: _buildTextSpans(line, forMeasurement: false),
-              ),
-              softWrap: true,
-              overflow: TextOverflow.clip,
-            ),
-          ),
-        ),
+      child: ReadingEmphasisLine(
+        line: line,
+        geometry: _textGeometry,
+        presentation: _textPresentation,
+        glyphCache: _glyphCache,
+        width: textWidth,
+        direction: Directionality.of(context),
+        onCharTap: widget.onCharTap,
+        scrollController: widget.scrollController,
+        contentTop:
+            _topPad(viewportHeight) + _lineTops[index] + _lineVerticalPadding,
+        viewportHeight: viewportHeight,
       ),
     );
   }

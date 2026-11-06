@@ -42,6 +42,11 @@ enum WsMessageType {
   settingsGetResponse('settings:get_response'),
   settingsSave('settings:save'),
   settingsSaveResponse('settings:save_response'),
+  settingsReadingEmphasisPatch('settings:reading_emphasis_patch'),
+  settingsReadingEmphasisPatchResponse(
+    'settings:reading_emphasis_patch_response',
+  ),
+  settingsReadingEmphasisChanged('settings:reading_emphasis_changed'),
   settingsReset('settings:reset'),
   settingsResetResponse('settings:reset_response'),
 

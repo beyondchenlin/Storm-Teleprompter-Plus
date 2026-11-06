@@ -11,12 +11,17 @@ import 'ws_server.dart';
 /// 处理稿件和文件夹的 CRUD 操作，通过 WebSocket 向前端提供数据。
 /// 底层使用统一应用数据存储持久化。
 class ArticleService {
+  ArticleService({AppPreferences? preferences})
+    : _providedPreferences = preferences;
+
+  final AppPreferences? _providedPreferences;
   late AppPreferences _prefs;
+  Future<void> _pendingMutation = Future<void>.value();
   int _idCounter = 0;
 
   /// 初始化存储
   Future<void> init() async {
-    _prefs = await AppPreferences.getInstance();
+    _prefs = _providedPreferences ?? await AppPreferences.getInstance();
   }
 
   /// 注册消息处理器到 WsServer
@@ -535,8 +540,24 @@ class ArticleService {
 
   // ─── 底层存储操作 ───────────────────────────────────────
 
+  /// 稿件和文件夹共用一条读改写队列，避免整表快照覆盖并发修改。
+  Future<T> _mutate<T>(Future<T> Function() mutation) {
+    final operation = _pendingMutation.then((_) => mutation());
+    _pendingMutation = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
   /// 获取所有稿件列表
   Future<List<Article>> loadArticles() async {
+    await _pendingMutation;
+    return _readArticles();
+  }
+
+  // 队列内部直接读取最后成功缓存，不能等待包含自身的修改队列。
+  List<Article> _readArticles() {
     final jsonStr = _prefs.getString(StorageConstants.articlesKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
 
@@ -555,14 +576,24 @@ class ArticleService {
   /// 保存全部稿件
   Future<void> _saveArticles(List<Article> articles) async {
     final jsonStr = jsonEncode(articles.map((a) => a.toJson()).toList());
-    await _prefs.setString(StorageConstants.articlesKey, jsonStr);
+    if (!await _prefs.setString(StorageConstants.articlesKey, jsonStr)) {
+      throw StateError('保存稿件失败');
+    }
   }
 
   Future<void> replaceArticles(List<Article> articles) =>
-      _saveArticles(articles);
+      _mutate(() => _saveArticles(articles));
 
   /// 创建新稿件
   Future<Article> createArticle({
+    required String title,
+    required String content,
+    String? folderId,
+  }) => _mutate(
+    () => _createArticle(title: title, content: content, folderId: folderId),
+  );
+
+  Future<Article> _createArticle({
     required String title,
     required String content,
     String? folderId,
@@ -577,7 +608,7 @@ class ArticleService {
       folderId: folderId,
     );
 
-    final articles = await loadArticles();
+    final articles = _readArticles();
     articles.insert(0, article);
     await _saveArticles(articles);
     return article;
@@ -589,8 +620,22 @@ class ArticleService {
     String? title,
     String? content,
     Map<String, dynamic>? teleprompterSettings,
+  }) => _mutate(
+    () => _updateArticle(
+      id,
+      title: title,
+      content: content,
+      teleprompterSettings: teleprompterSettings,
+    ),
+  );
+
+  Future<Article?> _updateArticle(
+    String id, {
+    String? title,
+    String? content,
+    Map<String, dynamic>? teleprompterSettings,
   }) async {
-    final articles = await loadArticles();
+    final articles = _readArticles();
     final index = articles.indexWhere((a) => a.id == id);
     if (index == -1) return null;
 
@@ -606,8 +651,10 @@ class ArticleService {
   }
 
   /// 删除稿件
-  Future<bool> deleteArticle(String id) async {
-    final articles = await loadArticles();
+  Future<bool> deleteArticle(String id) => _mutate(() => _deleteArticle(id));
+
+  Future<bool> _deleteArticle(String id) async {
+    final articles = _readArticles();
     final initialLength = articles.length;
     articles.removeWhere((a) => a.id == id);
     if (articles.length == initialLength) return false;
@@ -616,11 +663,14 @@ class ArticleService {
   }
 
   /// 移动稿件到文件夹
-  Future<Article?> moveArticleToFolder(
+  Future<Article?> moveArticleToFolder(String articleId, String? folderId) =>
+      _mutate(() => _moveArticleToFolder(articleId, folderId));
+
+  Future<Article?> _moveArticleToFolder(
     String articleId,
     String? folderId,
   ) async {
-    final articles = await loadArticles();
+    final articles = _readArticles();
     final index = articles.indexWhere((a) => a.id == articleId);
     if (index == -1) return null;
 
@@ -636,6 +686,11 @@ class ArticleService {
 
   /// 获取所有文件夹
   Future<List<Folder>> loadFolders() async {
+    await _pendingMutation;
+    return _readFolders();
+  }
+
+  List<Folder> _readFolders() {
     final jsonStr = _prefs.getString(StorageConstants.foldersKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
 
@@ -652,13 +707,19 @@ class ArticleService {
   /// 保存全部文件夹
   Future<void> _saveFolders(List<Folder> folders) async {
     final jsonStr = jsonEncode(folders.map((f) => f.toJson()).toList());
-    await _prefs.setString(StorageConstants.foldersKey, jsonStr);
+    if (!await _prefs.setString(StorageConstants.foldersKey, jsonStr)) {
+      throw StateError('保存文件夹失败');
+    }
   }
 
-  Future<void> replaceFolders(List<Folder> folders) => _saveFolders(folders);
+  Future<void> replaceFolders(List<Folder> folders) =>
+      _mutate(() => _saveFolders(folders));
 
   /// 创建新文件夹
-  Future<Folder> createFolder({required String name, String? parentId}) async {
+  Future<Folder> createFolder({required String name, String? parentId}) =>
+      _mutate(() => _createFolder(name: name, parentId: parentId));
+
+  Future<Folder> _createFolder({required String name, String? parentId}) async {
     final now = DateTime.now();
     final folder = Folder(
       id: _generateId(),
@@ -667,15 +728,18 @@ class ArticleService {
       createdAt: now,
     );
 
-    final folders = await loadFolders();
+    final folders = _readFolders();
     folders.add(folder);
     await _saveFolders(folders);
     return folder;
   }
 
   /// 重命名文件夹
-  Future<Folder?> renameFolder(String id, String newName) async {
-    final folders = await loadFolders();
+  Future<Folder?> renameFolder(String id, String newName) =>
+      _mutate(() => _renameFolder(id, newName));
+
+  Future<Folder?> _renameFolder(String id, String newName) async {
+    final folders = _readFolders();
     final index = folders.indexWhere((f) => f.id == id);
     if (index == -1) return null;
 
@@ -686,8 +750,11 @@ class ArticleService {
   }
 
   /// 将文件夹移动到新位置。目标不能是自身或自身的后代。
-  Future<Folder?> moveFolder(String id, String? parentId) async {
-    final folders = await loadFolders();
+  Future<Folder?> moveFolder(String id, String? parentId) =>
+      _mutate(() => _moveFolder(id, parentId));
+
+  Future<Folder?> _moveFolder(String id, String? parentId) async {
+    final folders = _readFolders();
     final index = folders.indexWhere((folder) => folder.id == id);
     if (index == -1 || !_isValidFolderDestination(folders, id, parentId)) {
       return null;
@@ -703,8 +770,11 @@ class ArticleService {
   }
 
   /// 递归复制文件夹，保留子文件夹、稿件富文本及每稿提词器设置。
-  Future<FolderCopyResult?> copyFolder(String id, String? parentId) async {
-    final folders = await loadFolders();
+  Future<FolderCopyResult?> copyFolder(String id, String? parentId) =>
+      _mutate(() => _copyFolder(id, parentId));
+
+  Future<FolderCopyResult?> _copyFolder(String id, String? parentId) async {
+    final folders = _readFolders();
     final source = folders.where((folder) => folder.id == id).firstOrNull;
     if (source == null || !_isValidFolderDestination(folders, id, parentId)) {
       return null;
@@ -750,7 +820,7 @@ class ArticleService {
       pending.removeWhere(copiedInPass.contains);
     }
 
-    final articles = await loadArticles();
+    final articles = _readArticles();
     final copiedArticles = <Article>[
       for (final article in articles)
         if (article.folderId != null && idMap.containsKey(article.folderId))
@@ -795,8 +865,10 @@ class ArticleService {
   }
 
   /// 删除文件夹
-  Future<bool> deleteFolder(String id) async {
-    final folders = await loadFolders();
+  Future<bool> deleteFolder(String id) => _mutate(() => _deleteFolder(id));
+
+  Future<bool> _deleteFolder(String id) async {
+    final folders = _readFolders();
     final initialLength = folders.length;
     folders.removeWhere((f) => f.id == id);
     if (folders.length == initialLength) return false;
@@ -808,7 +880,7 @@ class ArticleService {
     await _saveFolders(folders);
 
     // 将该文件夹下的稿件移回根目录
-    final articles = await loadArticles();
+    final articles = _readArticles();
     bool changed = false;
     for (int i = 0; i < articles.length; i++) {
       if (articles[i].folderId == id) {
