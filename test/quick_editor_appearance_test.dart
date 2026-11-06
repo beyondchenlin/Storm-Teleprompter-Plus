@@ -115,7 +115,14 @@ void main() {
       tester.getBottomLeft(title).dy,
       lessThan(tester.getTopLeft(button).dy),
     );
-    expect(tester.getSize(title).width, greaterThan(200));
+    // Check complete visibility, independent of the length of the product name.
+    expect(
+      tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+      isFalse,
+    );
+    expect(tester.getRect(title).left, greaterThanOrEqualTo(0));
+    expect(tester.getRect(title).right, lessThanOrEqualTo(320));
+    expect(button.hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

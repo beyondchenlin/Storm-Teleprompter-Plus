@@ -161,7 +161,7 @@ Future<void> _extractModelArchiveToDisk(
     var decodedArchivePath = archivePath;
     if (format == _ModelArchiveFormat.tarBzip2) {
       temporaryDirectory = await Directory.systemTemp.createTemp(
-        'storm_asr_model_',
+        'BK103_asr_model_',
       );
       decodedArchivePath = p.join(temporaryDirectory.path, 'model.tar');
       final compressedInput = InputFileStream(archivePath);

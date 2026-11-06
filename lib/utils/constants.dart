@@ -2,8 +2,8 @@
 abstract final class AppConstants {
   AppConstants._();
 
-  static const String displayName = '飓风提词器 Plus';
-  static const String englishName = 'Storm Teleprompter+';
+  static const String displayName = 'BK103';
+  static const String englishName = 'BK103';
   static const String chineseAboutDescription =
       '基于 Flutter 构建的跨平台智能提词器，支持富文本稿件管理、自动滚动、离线语音识别、分光镜镜像显示，以及局域网多设备同步。';
   static const String englishAboutDescription =
@@ -26,7 +26,10 @@ abstract final class StorageConstants {
   static const String desktopDataDirectoryName = 'app_data';
   static const String desktopPreferencesFileName = 'application.json';
   static const String logDirectoryName = 'logs';
-  static const String startupLogFilePrefix = 'storm-teleprompter-startup-';
+  static const String startupLogFilePrefix = 'BK103-startup-';
+  // Continue rotating historical logs after the product rename.
+  static const String legacyStartupLogFilePrefix =
+      'storm-teleprompter-startup-';
   static const int maxStartupLogFiles = 7;
 }
 

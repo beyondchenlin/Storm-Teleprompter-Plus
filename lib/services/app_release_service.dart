@@ -5,9 +5,11 @@ import 'package:http/http.dart' as http;
 import 'git_version.dart';
 
 const githubRepositoryUrl =
-    'https://github.com/html5syt/Storm-Teleprompter-Plus';
+    'https://github.com/beyondchenlin/Storm-Teleprompter-Plus';
+// The repository's default branch remains the upstream mirror.
+const githubProjectPageUrl = '$githubRepositoryUrl/tree/dev';
 const _latestReleaseApiUrl =
-    'https://api.github.com/repos/html5syt/Storm-Teleprompter-Plus/releases/latest';
+    'https://api.github.com/repos/beyondchenlin/Storm-Teleprompter-Plus/releases/latest';
 
 class AppVersionInfo {
   const AppVersionInfo(this.value);

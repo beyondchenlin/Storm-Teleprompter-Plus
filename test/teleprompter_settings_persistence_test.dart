@@ -93,6 +93,20 @@ void main() {
     expect(restored.teleprompterSettings, settings);
   });
 
+  test('BK103 can still import a backup carrying the original format id', () {
+    final restored = AppBackup.fromJson({
+      'format': 'storm-teleprompter-backup',
+      'version': 1,
+      'createdAt': '2026-11-06T00:00:00Z',
+      'articles': <dynamic>[],
+      'folders': <dynamic>[],
+      'settings': {'fontSize': 76, 'currentCharScale': 1.15},
+    });
+    expect(restored.settings.fontSize, 76);
+    expect(restored.settings.currentCharScale, 1.15);
+    expect(restored.toJson()['format'], 'storm-teleprompter-backup');
+  });
+
   test('complete backup survives JSON round trip', () {
     final now = DateTime.utc(2026, 7, 12, 8, 30);
     final article = Article(
