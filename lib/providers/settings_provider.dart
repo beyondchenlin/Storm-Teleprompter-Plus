@@ -19,12 +19,16 @@ class SettingsProvider with ChangeNotifier {
   final Map<String, int> _pendingReadingEmphasisVersions = {};
   Map<String, dynamic> _confirmedReadingEmphasis = const AppSettings()
       .toReadingEmphasisMap();
-  Future<void> _readingEmphasisWriteTail = Future<void>.value();
+  Future<void> _settingsWriteTail = Future<void>.value();
+  int _ordinarySettingsEditVersion = 0;
+  // 只保护当前连接的待保存普通设置，旧连接的失效写入不阻止重连加载。
+  final Map<int, int> _ordinarySettingsQueuedWrites = {};
   int _readingEmphasisEditVersion = 0;
   int _readingEmphasisRevision = -1;
   int _readingEmphasisConnectionGeneration = 0;
   int _readingEmphasisQueuedWrites = 0;
   int? _pendingSettingsResetVersion;
+  AppSettings? _pendingSettingsResetSnapshot;
   String? _readingEmphasisSaveError;
   bool _disposed = false;
 
@@ -59,7 +63,10 @@ class SettingsProvider with ChangeNotifier {
     _readingEmphasisSubscription = connection
         .listenTo(WsMessageType.settingsReadingEmphasisChanged)
         .listen(_handleReadingEmphasisChanged);
+    var wasConnected = connection.isConnected;
     _connectionListener = () {
+      final becameConnected = connection.isConnected && !wasConnected;
+      wasConnected = connection.isConnected;
       if (!connection.isConnected) {
         // 服务重启后的版本号会从零开始；远程断线保留稿件仍需重置版本。
         _readingEmphasisRevision = -1;
@@ -70,6 +77,10 @@ class SettingsProvider with ChangeNotifier {
         _articleOverridesActive = false;
         _isLoading = false;
         notifyListeners();
+      }
+      if (becameConnected) {
+        // 断线期间收不到广播；每次连通后主动取回服务端的当前版本。
+        unawaited(loadSettings());
       }
     };
     connection.addListener(_connectionListener!);
@@ -191,26 +202,42 @@ class SettingsProvider with ChangeNotifier {
 
   /// 从后端加载设置
   Future<void> loadSettings() async {
+    if (_disposed) return;
     final generation = _readingEmphasisConnectionGeneration;
+    final ordinaryEditVersion = _ordinarySettingsEditVersion;
+    final hadOrdinaryWrites = _ordinarySettingsQueuedWrites.containsKey(
+      generation,
+    );
+    final pendingResetAtStart = _pendingSettingsResetVersion;
     _isLoading = true;
     notifyListeners();
 
     try {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(WsMessageType.settingsGet);
-        if (response.type == WsMessageType.settingsGetResponse &&
+        if (!_disposed &&
+            response.type == WsMessageType.settingsGetResponse &&
             generation == _readingEmphasisConnectionGeneration) {
-          _settings = AppSettings.fromJson(
+          final loaded = AppSettings.fromJson(
             response.data['settings'] as Map<String, dynamic>,
           );
+          // 失败或排队中的重置保留完整意图；迟到的读取不能回滚新编辑。
+          if (_pendingSettingsResetSnapshot case final AppSettings pending) {
+            _settings = pending;
+          } else if (ordinaryEditVersion == _ordinarySettingsEditVersion &&
+              !hadOrdinaryWrites &&
+              !_ordinarySettingsQueuedWrites.containsKey(generation) &&
+              pendingResetAtStart == null) {
+            _settings = loaded;
+          }
           final revision = response.data['readingEmphasisRevision'];
           if (revision is int && revision >= 0) {
             _acceptReadingEmphasisSnapshot(
-              _settings.toReadingEmphasisMap(),
+              loaded.toReadingEmphasisMap(),
               revision,
             );
           } else {
-            _confirmedReadingEmphasis = _settings.toReadingEmphasisMap();
+            _confirmedReadingEmphasis = loaded.toReadingEmphasisMap();
             _projectReadingEmphasis();
           }
         }
@@ -219,21 +246,84 @@ class SettingsProvider with ChangeNotifier {
       debugPrint('[SettingsProvider] 加载设置失败: $e');
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notifyReadingEmphasis();
     }
   }
 
   /// 保存设置到后端
   Future<void> _saveSettings() async {
+    final snapshot = _settings;
+    final connection = _connection;
+    final generation = _readingEmphasisConnectionGeneration;
+    _ordinarySettingsEditVersion++;
+    _rememberPendingResetSnapshot();
     try {
-      if (_connection != null && _connection!.isConnected) {
-        await _connection!.request(
-          WsMessageType.settingsSave,
-          data: {'settings': _settings.toJson()},
+      if (connection != null && connection.isConnected) {
+        _ordinarySettingsQueuedWrites.update(
+          generation,
+          (count) => count + 1,
+          ifAbsent: () => 1,
         );
+        try {
+          await _enqueueSettingsWrite(
+            () => _writeSettingsSnapshot(connection, generation, snapshot),
+          );
+        } finally {
+          final remaining = _ordinarySettingsQueuedWrites[generation]! - 1;
+          if (remaining == 0) {
+            _ordinarySettingsQueuedWrites.remove(generation);
+          } else {
+            _ordinarySettingsQueuedWrites[generation] = remaining;
+          }
+        }
       }
     } catch (e) {
       debugPrint('[SettingsProvider] 保存设置失败: $e');
+    }
+  }
+
+  /// 普通设置、阅读设置和重置共用顺序；失败不阻塞后续操作。
+  Future<void> _enqueueSettingsWrite(Future<void> Function() operation) {
+    final write = _settingsWriteTail.then((_) => operation());
+    _settingsWriteTail = write.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return write;
+  }
+
+  void _checkSettingsConnection(
+    ConnectionProvider? connection,
+    int generation,
+  ) {
+    if (connection == null ||
+        !identical(connection, _connection) ||
+        generation != _readingEmphasisConnectionGeneration ||
+        !connection.isConnected) {
+      throw StateError('设置服务连接已变化，请连接后重试保存');
+    }
+  }
+
+  Future<void> _writeSettingsSnapshot(
+    ConnectionProvider connection,
+    int generation,
+    AppSettings snapshot,
+  ) async {
+    _checkSettingsConnection(connection, generation);
+    final response = await connection.request(
+      WsMessageType.settingsSave,
+      data: {'settings': snapshot.toJson()},
+    );
+    _checkSettingsConnection(connection, generation);
+    if (response.type != WsMessageType.settingsSaveResponse ||
+        response.data['success'] != true) {
+      throw StateError(response.data['message'] as String? ?? '设置服务未确认保存');
+    }
+  }
+
+  void _rememberPendingResetSnapshot() {
+    if (_pendingSettingsResetVersion != null) {
+      _pendingSettingsResetSnapshot = _settings;
     }
   }
 
@@ -257,6 +347,7 @@ class SettingsProvider with ChangeNotifier {
     _pendingReadingEmphasis.addAll(validated);
     _pendingReadingEmphasisVersions.addAll(versions);
     _projectReadingEmphasis();
+    _rememberPendingResetSnapshot();
     final save = _enqueueReadingEmphasisWrite(validated, versions);
     _syncTeleprompterSettingsToBackend();
     await save;
@@ -264,21 +355,30 @@ class SettingsProvider with ChangeNotifier {
 
   Future<void> retryReadingEmphasisSave() async {
     _readingEmphasisSaveError = null;
-    if (_pendingSettingsResetVersion case final int resetVersion) {
+    if (_pendingSettingsResetVersion != null) {
       final defaults = const AppSettings().toReadingEmphasisMap();
+      final desiredSettings = _settings;
       final desired = _settings.toReadingEmphasisMap();
       final version = ++_readingEmphasisEditVersion;
+      // 每次重试都有独立版本，较早的完成不能清除较新的重试意图。
+      _pendingSettingsResetVersion = version;
+      _pendingSettingsResetSnapshot = desiredSettings;
       _pendingReadingEmphasis.addAll(desired);
       _pendingReadingEmphasisVersions.addAll({
         for (final key in desired.keys) key: version,
       });
       // 重置失败后的新编辑仍保留；重置确认后继续保存这些更新。
-      await _enqueueReadingEmphasisWrite(defaults, {
-        for (final key in defaults.keys)
-          if (_pendingReadingEmphasis[key] == defaults[key] &&
-              _pendingReadingEmphasisVersions.containsKey(key))
-            key: _pendingReadingEmphasisVersions[key]!,
-      }, resetVersion: resetVersion);
+      await _enqueueReadingEmphasisWrite(
+        defaults,
+        {
+          for (final key in defaults.keys)
+            if (_pendingReadingEmphasis[key] == defaults[key] &&
+                _pendingReadingEmphasisVersions.containsKey(key))
+              key: _pendingReadingEmphasisVersions[key]!,
+        },
+        resetVersion: version,
+        restoreAfterReset: desiredSettings,
+      );
     }
     if (_pendingReadingEmphasis.isNotEmpty) {
       await _enqueueReadingEmphasisWrite(
@@ -294,28 +394,22 @@ class SettingsProvider with ChangeNotifier {
     Map<String, dynamic> patch,
     Map<String, int> versions, {
     int? resetVersion,
+    AppSettings? restoreAfterReset,
   }) {
     final connection = _connection;
     final generation = _readingEmphasisConnectionGeneration;
     _readingEmphasisQueuedWrites++;
     _notifyReadingEmphasis();
-    final write = _readingEmphasisWriteTail.then((_) async {
+    return _enqueueSettingsWrite(() async {
       try {
-        if (connection == null ||
-            !identical(connection, _connection) ||
-            generation != _readingEmphasisConnectionGeneration ||
-            !connection.isConnected) {
-          throw StateError('尚未连接到本机设置服务，请连接后重试');
-        }
-        final response = await connection.request(
+        _checkSettingsConnection(connection, generation);
+        final response = await connection!.request(
           resetVersion == null
               ? WsMessageType.settingsReadingEmphasisPatch
               : WsMessageType.settingsReset,
           data: resetVersion == null ? {'patch': patch} : const {},
         );
-        if (generation != _readingEmphasisConnectionGeneration) {
-          throw StateError('设置服务连接已变化，请重试保存');
-        }
+        _checkSettingsConnection(connection, generation);
         final expectedType = resetVersion == null
             ? WsMessageType.settingsReadingEmphasisPatchResponse
             : WsMessageType.settingsResetResponse;
@@ -330,6 +424,15 @@ class SettingsProvider with ChangeNotifier {
         if (revision is! int || revision < 0) {
           throw StateError('设置服务返回了无效版本号');
         }
+        // 重试期间先恢复重置后的普通字段，再让后续用户操作继续出队。
+        // 两次请求作为同一个步骤，避免迟到的恢复覆盖刚改的字号或模型。
+        if (restoreAfterReset != null) {
+          await _writeSettingsSnapshot(
+            connection,
+            generation,
+            restoreAfterReset,
+          );
+        }
         for (final entry in versions.entries) {
           if (_pendingReadingEmphasisVersions[entry.key] == entry.value) {
             _pendingReadingEmphasis.remove(entry.key);
@@ -339,6 +442,7 @@ class SettingsProvider with ChangeNotifier {
         if (resetVersion != null &&
             _pendingSettingsResetVersion == resetVersion) {
           _pendingSettingsResetVersion = null;
+          _pendingSettingsResetSnapshot = null;
         }
         // 旧响应不能覆盖更晚的广播，也不能覆盖滑块尚未确认的新预览。
         _acceptReadingEmphasisSnapshot(snapshot, revision);
@@ -354,12 +458,6 @@ class SettingsProvider with ChangeNotifier {
         _notifyReadingEmphasis();
       }
     });
-    // 保持调用顺序；单次失败不阻断后续编辑或显式重试。
-    _readingEmphasisWriteTail = write.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
-    return write;
   }
 
   Map<String, dynamic> _readingSnapshot(Object? raw) {
@@ -699,10 +797,12 @@ class SettingsProvider with ChangeNotifier {
   /// 完全重置所有设置为默认值
   Future<void> resetAllSettings() async {
     _settings = const AppSettings();
+    _ordinarySettingsEditVersion++;
     final defaults = _settings.toReadingEmphasisMap();
     final version = ++_readingEmphasisEditVersion;
     final versions = {for (final key in defaults.keys) key: version};
     _pendingSettingsResetVersion = version;
+    _pendingSettingsResetSnapshot = _settings;
     _pendingReadingEmphasis.addAll(defaults);
     _pendingReadingEmphasisVersions.addAll(versions);
     _readingEmphasisSaveError = null;

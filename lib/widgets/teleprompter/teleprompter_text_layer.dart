@@ -485,30 +485,39 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     final line = widget.lines[safeLine];
     if (line.characters.isEmpty) return null;
 
-    final layout = _layoutForLine(line, textWidth, textDirection);
+    var layout = _layoutForLine(line, textWidth, textDirection);
     final placement = layout.placementForRawIndex(widget.currentIndex)!;
     final currentX = placement.cell.center.dx;
-    final targetRow = layout.rows.indexOf(placement.row) + direction.sign;
-    if (targetRow >= 0 && targetRow < layout.rows.length) {
-      return layout.rawIndexForOffset(
-        Offset(currentX, layout.rows[targetRow].centerY),
-      );
-    }
-    // Crossing a logical paragraph boundary uses the adjacent visual row's
-    // actual height, not the old row's height (important for mixed-size text).
-    var targetLine = safeLine + direction.sign;
-    while (targetLine >= 0 && targetLine < widget.lines.length) {
-      final target = widget.lines[targetLine];
-      if (target.characters.isNotEmpty) {
-        final targetLayout = _layoutForLine(target, textWidth, textDirection);
-        final row = direction > 0
-            ? targetLayout.rows.first
-            : targetLayout.rows.last;
-        return targetLayout.rawIndexForOffset(Offset(currentX, row.centerY));
+    var targetRow = layout.rows.indexOf(placement.row) + direction;
+    var targetLine = safeLine;
+    final step = direction.sign;
+
+    // 按实际可视行累计完整步数，字号和段落行高不影响行数。
+    // 空段没有可定位的字符；到达稿件边界时停在首末可读行。
+    while (targetRow < 0 || targetRow >= layout.rows.length) {
+      var nextLine = targetLine + step;
+      while (nextLine >= 0 &&
+          nextLine < widget.lines.length &&
+          widget.lines[nextLine].characters.isEmpty) {
+        nextLine += step;
       }
-      targetLine += direction.sign;
+      if (nextLine < 0 || nextLine >= widget.lines.length) {
+        targetRow = targetRow.clamp(0, layout.rows.length - 1).toInt();
+        break;
+      }
+
+      if (step > 0) targetRow -= layout.rows.length;
+      targetLine = nextLine;
+      layout = _layoutForLine(
+        widget.lines[targetLine],
+        textWidth,
+        textDirection,
+      );
+      if (step < 0) targetRow += layout.rows.length;
     }
-    return null;
+    return layout.rawIndexForOffset(
+      Offset(currentX, layout.rows[targetRow].centerY),
+    );
   }
 
   void scrollToCurrentChar({bool animate = true}) {
