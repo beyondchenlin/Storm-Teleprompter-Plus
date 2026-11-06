@@ -1,22 +1,20 @@
-<!-- <img align="right" width="120" height="120" src="lib/favicon.png" /> -->
-<!-- <h1 align="center">飓风提词器 Plus</h1> -->
-<p align="center"><strong>Storm Teleprompter+</strong></p>
+<h1 align="center">BK103</h1>
 
-<p align="center"><img style="width: 400px; height: auto;" src="head_pic.png" /></p>
+<p align="center"><img style="width: 400px; height: auto;" src="lib/favicon.png" alt="BK103" /></p>
 
 <p align="center">
-  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/actions/workflows/debug.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/html5syt/Storm-Teleprompter-Plus/debug.yml?branch=v2&amp;style=flat-square&amp;logo=githubactions&amp;logoColor=white&amp;label=build" /></a>
+  <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/actions/workflows/debug.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/beyondchenlin/Storm-Teleprompter-Plus/debug.yml?branch=v2&amp;style=flat-square&amp;logo=githubactions&amp;logoColor=white&amp;label=build" /></a>
   <a href="https://flutter.dev/"><img alt="Flutter 3.44.1" src="https://img.shields.io/badge/Flutter-3.44.1-02569B?style=flat-square&amp;logo=flutter&amp;logoColor=white" /></a>
-  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/html5syt/Storm-Teleprompter-Plus?style=flat-square&amp;display_name=tag&amp;sort=semver" /></a>
-  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/html5syt/Storm-Teleprompter-Plus/total?style=flat-square&amp;logo=github" /></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/html5syt/Storm-Teleprompter-Plus?style=flat-square" /></a>
-  <a href="https://github.com/html5syt/Storm-Teleprompter-Plus/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/html5syt/Storm-Teleprompter-Plus?style=flat-square&amp;logo=github" /></a>
+  <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/beyondchenlin/Storm-Teleprompter-Plus?style=flat-square&amp;display_name=tag&amp;sort=semver" /></a>
+  <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/beyondchenlin/Storm-Teleprompter-Plus/total?style=flat-square&amp;logo=github" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/beyondchenlin/Storm-Teleprompter-Plus?style=flat-square" /></a>
+  <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/beyondchenlin/Storm-Teleprompter-Plus?style=flat-square&amp;logo=github" /></a>
 </p>
 
-基于 Flutter 开发的跨平台提词器，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
+BK103（智能提词器）基于 Flutter（跨平台开发框架）开发，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 
 > [!NOTE]
-> 本项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
+> 本产品在 [Storm Teleprompter Plus（上游提词器）](https://github.com/html5syt/Storm-Teleprompter-Plus) 基础上开发，保留原作者的许可证与署名。上游项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
 >
 > 原始版本地址：[飓风提词器](https://mcnt8r4c3f2k.aiforce.cloud/app/app_4k0qhy8j74gpb)
 
@@ -40,6 +38,8 @@
 
 ## 平台说明
 
+本定制版本以 Windows（微软桌面系统）为交付平台。其他平台本轮同步名称和图标源码，未完成本轮构建验收；下表描述上游已有的平台支持。
+
 | 平台 | 状态 | 说明 |
 | --- | --- | --- |
 | Windows | 主要测试平台 | 支持本地服务端、麦克风、ASR、文件夹拖放和完整稿件管理 |
@@ -49,7 +49,11 @@
 
 ## 获取应用
 
-可从仓库的 [Releases](https://github.com/html5syt/Storm-Teleprompter-Plus/releases) 页面下载对应平台产物，也可按照[本地运行](#本地运行)章节从源码启动。
+产品名和程序文件统一为 **BK103**。微软桌面系统解压后运行 `BK103.exe`；必须保留同目录的动态库和 `data`（程序资源）目录。升级时保留 `app_data`（稿件、设置和语音模型）目录。图标原图位于 `assets/branding/BK103-source.jpg`，保持上传图片不变；`lib/favicon.png` 是转换格式后的显示资源。通过 `tool/generate_icons.ps1` 统一生成各平台尺寸；微软桌面系统图标包含 16～256 像素的十种尺寸。
+
+本地打包使用 `tool/package_windows.ps1`，只收集程序、许可证和可选语音模型，不把个人稿件和设置放入分发包。
+
+可从仓库的 [Releases](https://github.com/beyondchenlin/Storm-Teleprompter-Plus/releases) 页面下载对应平台产物，也可按照[本地运行](#本地运行)章节从源码启动。
 
 ## 快速开始
 
@@ -210,7 +214,7 @@
 ### 获取代码
 
 ```powershell
-git clone https://github.com/html5syt/Storm-Teleprompter-Plus.git
+git clone --branch dev https://github.com/beyondchenlin/Storm-Teleprompter-Plus.git
 cd Storm-Teleprompter-Plus
 flutter pub get
 ```
@@ -321,7 +325,7 @@ flutter test --no-pub
 
 绝大部分代码由Codex编写，存在部分潜在不当实现或安全漏洞。如有发现，请提交 Issue 或 Pull Request。
 
-如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/html5syt/Storm-Teleprompter-Plus/issues) 中提交。
+如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/beyondchenlin/Storm-Teleprompter-Plus/issues) 中提交。
 
 <h2 align="right">Made with ❤ by Mr. Tim</h2>
 <h3 align="right">2026.7</h3>

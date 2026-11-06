@@ -23,7 +23,7 @@ import 'widgets/common/startup_update_checker.dart';
 late BackendServer globalBackendServer;
 AppLifecycleListener? appLifecycleListener;
 
-/// 飓风提词器 Plus 应用入口
+/// BK103 应用入口
 ///
 /// 启动流程：
 /// 1. 初始化后端服务（WebSocket 服务器）
@@ -118,7 +118,7 @@ Future<void> _startApplication(AppLogService appLog) async {
   });
   appLog.info('[Main] Installing Flutter widget tree');
   runApp(
-    StormTeleprompterApp(
+    BK103App(
       backend: globalBackendServer,
       connectionProvider: connectionProvider,
       articleProvider: articleProvider,
@@ -131,7 +131,7 @@ Future<void> _startApplication(AppLogService appLog) async {
 }
 
 /// 应用根 Widget
-class StormTeleprompterApp extends StatelessWidget {
+class BK103App extends StatelessWidget {
   final BackendServer backend;
   final ConnectionProvider connectionProvider;
   final ArticleProvider articleProvider;
@@ -139,7 +139,7 @@ class StormTeleprompterApp extends StatelessWidget {
   final SettingsProvider settingsProvider;
   final TeleprompterProvider teleprompterProvider;
 
-  const StormTeleprompterApp({
+  const BK103App({
     super.key,
     required this.backend,
     required this.connectionProvider,

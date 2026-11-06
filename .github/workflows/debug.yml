@@ -11,7 +11,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: "3.44.1"
-  APP_NAME: storm_teleprompter_plus
+  APP_NAME: BK103
 
 jobs:
   android:

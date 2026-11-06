@@ -28,7 +28,7 @@ class AppBackup {
   /// 导致只恢复了一部分内容。
   factory AppBackup.fromJson(Map<String, dynamic> json) {
     if (json['format'] != currentFormat || json['version'] != currentVersion) {
-      throw const FormatException('不是受支持的飓风提词器备份文件');
+      throw const FormatException('不是受支持的 BK103 备份文件');
     }
 
     return AppBackup(

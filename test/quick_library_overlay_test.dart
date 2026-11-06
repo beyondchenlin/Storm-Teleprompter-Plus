@@ -192,7 +192,7 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
-    final aboutLink = find.text('关于飓风提词器 Plus');
+    final aboutLink = find.text('关于 BK103');
     await tester.scrollUntilVisible(aboutLink, 450, scrollable: settingsScroll);
     await tester.tap(aboutLink);
     await tester.pumpAndSettle();

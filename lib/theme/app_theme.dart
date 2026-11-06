@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_colors.dart';
 
-/// 飓风提词器全局主题
+/// BK103全局主题
 ///
 /// 使用 Material 3 暗色主题，品牌色为金色 #DB9D16。
 class AppTheme {

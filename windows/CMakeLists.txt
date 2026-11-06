@@ -1,6 +1,6 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(storm_teleprompter_plus LANGUAGES CXX)
+project(BK103 LANGUAGES CXX)
 
 if(MSVC)
   add_compile_options(/utf-8)
@@ -8,7 +8,7 @@ endif()
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "storm_teleprompter_plus")
+set(BINARY_NAME "BK103")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

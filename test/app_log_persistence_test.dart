@@ -26,10 +26,7 @@ void main() {
         p.dirname(path!),
         p.join(temp.path, StorageConstants.logDirectoryName),
       );
-      expect(
-        p.basename(path),
-        'storm-teleprompter-startup-20260809-140506-007.log',
-      );
+      expect(p.basename(path), 'BK103-startup-20260809-140506-007.log');
 
       persistence.appendLines(const ['first', 'second']);
       expect(await File(path).readAsString(), 'first\nsecond\n');
@@ -91,6 +88,39 @@ void main() {
       expect(unrelated.existsSync(), isTrue);
     },
   );
+
+  test('rotates legacy and BK103 launch logs together after upgrade', () async {
+    final temp = await Directory.systemTemp.createTemp('bk103_log_upgrade_');
+    final logs = Directory(p.join(temp.path, 'logs'));
+    await logs.create();
+    final oldFiles = <File>[];
+    for (var index = 0; index < 8; index++) {
+      final prefix = index < 4
+          ? 'storm-teleprompter-startup-'
+          : 'BK103-startup-';
+      final file = File(p.join(logs.path, '$prefix$index.log'));
+      await file.writeAsString('previous $index');
+      await file.setLastModified(DateTime(2026, 8, index + 1));
+      oldFiles.add(file);
+    }
+    final unrelated = File(p.join(logs.path, 'notes.log'));
+    await unrelated.writeAsString('keep me');
+    final persistence = AppLogPersistence(
+      dataDirectoryProvider: () async => temp,
+      clock: () => DateTime(2026, 9, 1),
+    );
+    addTearDown(() async {
+      await persistence.close();
+      await temp.delete(recursive: true);
+    });
+    final current = await persistence.startSession();
+    expect(p.basename(current!), startsWith('BK103-startup-'));
+    expect(oldFiles[0].existsSync(), isFalse);
+    expect(oldFiles[1].existsSync(), isFalse);
+    expect(oldFiles.skip(2).every((file) => file.existsSync()), isTrue);
+    expect(logs.listSync().whereType<File>(), hasLength(8));
+    expect(await unrelated.readAsString(), 'keep me');
+  });
 
   test('uses a unique file name when two launches share a timestamp', () async {
     final temp = await Directory.systemTemp.createTemp(

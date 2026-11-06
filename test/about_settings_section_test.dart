@@ -32,12 +32,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('关于飓风提词器 Plus'), findsOneWidget);
-    await tester.tap(find.text('关于飓风提词器 Plus'));
+    expect(find.text('关于 BK103'), findsOneWidget);
+    await tester.tap(find.text('关于 BK103'));
     await tester.pumpAndSettle();
 
-    expect(find.text('飓风提词器 Plus'), findsOneWidget);
-    expect(find.text('Storm Teleprompter+'), findsOneWidget);
+    expect(find.text('BK103'), findsNWidgets(2));
     expect(find.text('访问 GitHub 项目主页'), findsOneWidget);
     expect(find.text('检查更新'), findsOneWidget);
     expect(find.text('License'), findsOneWidget);

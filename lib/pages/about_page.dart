@@ -119,7 +119,7 @@ class _AboutPageState extends State<AboutPage> {
                     leading: const Icon(Icons.code),
                     title: const Text('访问 GitHub 项目主页'),
                     trailing: const Icon(Icons.open_in_new, size: 18),
-                    onTap: () => _openUrl(githubRepositoryUrl),
+                    onTap: () => _openUrl(githubProjectPageUrl),
                   ),
                   ListTile(
                     leading: _checkingUpdate

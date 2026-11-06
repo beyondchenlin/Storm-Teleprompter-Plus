@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 飓风提词器色彩系统
+/// BK103色彩系统
 ///
 /// 基于品牌色 #DB9D16 (金色) 构建的深色主题色彩方案。
 class AppColors {

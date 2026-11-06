@@ -15,6 +15,10 @@ void main() {
 
   test('parses GitHub latest release response', () async {
     final client = MockClient((request) async {
+      expect(
+        request.url.toString(),
+        'https://api.github.com/repos/beyondchenlin/Storm-Teleprompter-Plus/releases/latest',
+      );
       expect(request.headers['Accept'], 'application/vnd.github+json');
       return http.Response(
         jsonEncode({
