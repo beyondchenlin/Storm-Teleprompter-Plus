@@ -15,6 +15,20 @@ enum AppBrightnessMode { system, light, dark }
 ///
 /// 管理所有用户可配置的提词器参数。
 class AppSettings {
+  static const defaultCurrentCharColor = 0xFFFFD54F;
+  static const defaultReadCharColor = 0xFF999999;
+  static const minCurrentCharScale = 1.0;
+  static const maxCurrentCharScale = 1.15;
+  static const defaultCurrentCharScale = 1.10;
+
+  /// 只属于应用全局设置，不允许稿件覆盖或写入稿件快照。
+  static const readingEmphasisKeys = <String>{
+    'readingEmphasisEnabled',
+    'currentCharColor',
+    'readCharColor',
+    'currentCharScale',
+  };
+
   /// 字体大小（像素）
   final double fontSize;
 
@@ -73,6 +87,12 @@ class AppSettings {
 
   /// 是否高亮当前字
   final bool highlightCurrentChar;
+
+  /// 当前字变色和放大的总开关。已读标记仍由 grayReadChars 控制。
+  final bool readingEmphasisEnabled;
+  final int currentCharColor;
+  final int readCharColor;
+  final double currentCharScale;
 
   /// 正文字体默认加粗
   final bool defaultBold;
@@ -162,6 +182,10 @@ class AppSettings {
     this.paddingX = 5.0,
     this.readingLineOffset = 0.5,
     this.highlightCurrentChar = false,
+    this.readingEmphasisEnabled = true,
+    this.currentCharColor = defaultCurrentCharColor,
+    this.readCharColor = defaultReadCharColor,
+    this.currentCharScale = defaultCurrentCharScale,
     this.defaultBold = true,
     this.progressInfoSizeRatio = 0.6,
     this.asrMirrorUrl = '',
@@ -215,6 +239,15 @@ class AppSettings {
       paddingX: (json['paddingX'] as num?)?.toDouble() ?? 5.0,
       readingLineOffset: (json['readingLineOffset'] as num?)?.toDouble() ?? 0.5,
       highlightCurrentChar: json['highlightCurrentChar'] as bool? ?? false,
+      readingEmphasisEnabled: json['readingEmphasisEnabled'] is bool
+          ? json['readingEmphasisEnabled'] as bool
+          : true,
+      currentCharColor: _storedColor(
+        json['currentCharColor'],
+        defaultCurrentCharColor,
+      ),
+      readCharColor: _storedColor(json['readCharColor'], defaultReadCharColor),
+      currentCharScale: _storedScale(json['currentCharScale']),
       defaultBold: json['defaultBold'] as bool? ?? true,
       progressInfoSizeRatio:
           (json['progressInfoSizeRatio'] as num?)?.toDouble() ?? 0.6,
@@ -272,6 +305,7 @@ class AppSettings {
       'paddingX': paddingX,
       'readingLineOffset': readingLineOffset,
       'highlightCurrentChar': highlightCurrentChar,
+      ...toReadingEmphasisMap(),
       'defaultBold': defaultBold,
       'progressInfoSizeRatio': progressInfoSizeRatio,
       'asrMirrorUrl': asrMirrorUrl,
@@ -333,6 +367,10 @@ class AppSettings {
     int? textColor,
     double? letterSpacing,
     bool? highlightCurrentChar,
+    bool? readingEmphasisEnabled,
+    int? currentCharColor,
+    int? readCharColor,
+    double? currentCharScale,
     bool? defaultBold,
     bool? underlineCurrentChar,
     double? readingAreaBorderWidth,
@@ -382,6 +420,17 @@ class AppSettings {
       textColor: textColor ?? this.textColor,
       letterSpacing: letterSpacing ?? this.letterSpacing,
       highlightCurrentChar: highlightCurrentChar ?? this.highlightCurrentChar,
+      readingEmphasisEnabled:
+          readingEmphasisEnabled ?? this.readingEmphasisEnabled,
+      currentCharColor: _storedColor(
+        currentCharColor ?? this.currentCharColor,
+        defaultCurrentCharColor,
+      ),
+      readCharColor: _storedColor(
+        readCharColor ?? this.readCharColor,
+        defaultReadCharColor,
+      ),
+      currentCharScale: _storedScale(currentCharScale ?? this.currentCharScale),
       defaultBold: defaultBold ?? this.defaultBold,
       underlineCurrentChar: underlineCurrentChar ?? this.underlineCurrentChar,
       readingAreaBorderWidth:
@@ -449,6 +498,10 @@ class AppSettings {
       teleprompterBgColor:
           overrides['teleprompterBgColor'] as int? ?? teleprompterBgColor,
       // 以下全局设置始终使用当前值，不被稿件覆盖
+      readingEmphasisEnabled: readingEmphasisEnabled,
+      currentCharColor: currentCharColor,
+      readCharColor: readCharColor,
+      currentCharScale: currentCharScale,
       asrModelId: asrModelId,
       asrModelName: asrModelName,
       uiPrimaryColor: uiPrimaryColor,
@@ -503,4 +556,71 @@ class AppSettings {
       'progressShowCurrentTime': progressShowCurrentTime,
     };
   }
+
+  /// 会话可携带全局显示状态，但稿件持久化必须继续用 toTeleprompterMap。
+  Map<String, dynamic> toSessionMap() => {
+    ...toTeleprompterMap(),
+    ...toReadingEmphasisMap(),
+  };
+
+  Map<String, dynamic> toReadingEmphasisMap() => {
+    'readingEmphasisEnabled': readingEmphasisEnabled,
+    'currentCharColor': currentCharColor,
+    'readCharColor': readCharColor,
+    'currentCharScale': currentCharScale,
+  };
+
+  /// 交互和协议输入采用严格校验，防止错误值被当作已成功保存。
+  static Map<String, dynamic> validateReadingEmphasisPatch(
+    Map<String, dynamic> patch,
+  ) {
+    if (patch.isEmpty) throw const FormatException('缺少当前字突出设置');
+    final validated = <String, dynamic>{};
+    for (final entry in patch.entries) {
+      if (!readingEmphasisKeys.contains(entry.key)) {
+        throw const FormatException('包含不支持的当前字突出设置');
+      }
+      final value = entry.value;
+      switch (entry.key) {
+        case 'readingEmphasisEnabled':
+          if (value is! bool) {
+            throw const FormatException('当前字突出开关必须是布尔值');
+          }
+          validated[entry.key] = value;
+        case 'currentCharColor':
+        case 'readCharColor':
+          if (value is! int || value < 0 || value > 0xFFFFFFFF) {
+            throw const FormatException('文字颜色必须是有效的32位颜色值');
+          }
+          validated[entry.key] = value;
+        case 'currentCharScale':
+          if (value is! num ||
+              !value.isFinite ||
+              value < minCurrentCharScale ||
+              value > maxCurrentCharScale) {
+            throw const FormatException('当前字放大倍数必须在1.00至1.15之间');
+          }
+          validated[entry.key] = value.toDouble();
+      }
+    }
+    return validated;
+  }
+
+  AppSettings withReadingEmphasisPatch(Map<String, dynamic> patch) {
+    final values = validateReadingEmphasisPatch(patch);
+    return copyWith(
+      readingEmphasisEnabled: values['readingEmphasisEnabled'] as bool?,
+      currentCharColor: values['currentCharColor'] as int?,
+      readCharColor: values['readCharColor'] as int?,
+      currentCharScale: values['currentCharScale'] as double?,
+    );
+  }
+
+  // 老版本没有这些字段；损坏的单项只回退自身，不能丢掉模型等其他设置。
+  static int _storedColor(Object? value, int fallback) =>
+      value is int && value >= 0 && value <= 0xFFFFFFFF ? value : fallback;
+
+  static double _storedScale(Object? value) => value is num && value.isFinite
+      ? value.clamp(minCurrentCharScale, maxCurrentCharScale).toDouble()
+      : defaultCurrentCharScale;
 }

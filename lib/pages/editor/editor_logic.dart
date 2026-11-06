@@ -278,7 +278,7 @@ mixin EditorLogic on State<EditorPage> {
             'currentIndex': teleprompterProvider.currentIndex,
             'isPlaying': teleprompterProvider.isPlaying,
             'article': article.toJson(),
-            'settings': settingsProvider.mergedSettings.toTeleprompterMap(),
+            'settings': settingsProvider.mergedSettings.toSessionMap(),
           },
         ),
       );

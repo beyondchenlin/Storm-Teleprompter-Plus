@@ -892,6 +892,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   /// 滚动模式按可见行高度移动，按行模式保留原有逐字前后跳转。
+  double _bodyRowHeight(AppSettings settings) =>
+      settings.fontSize *
+          AppSettings.maxCurrentCharScale *
+          settings.lineHeight +
+      4;
+
   void _stepPlayback(
     TeleprompterProvider teleprompter,
     AppSettings settings,
@@ -907,8 +913,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     }
     if (!scrollController.hasClients) return;
     scrollController.jumpTo(
-      (scrollController.offset +
-              direction * settings.fontSize * settings.lineHeight)
+      (scrollController.offset + direction * _bodyRowHeight(settings))
           .clamp(0.0, scrollController.position.maxScrollExtent)
           .toDouble(),
     );
@@ -1157,8 +1162,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
     if (settings.isContinuousScroll && scrollController.hasClients) {
       final target =
-          (scrollController.offset +
-                  direction * settings.fontSize * settings.lineHeight)
+          (scrollController.offset + direction * _bodyRowHeight(settings))
               .clamp(0.0, scrollController.position.maxScrollExtent)
               .toDouble();
       scrollController.jumpTo(target);
@@ -1211,10 +1215,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final viewportHeight = scrollController.hasClients
         ? scrollController.position.viewportDimension
         : MediaQuery.sizeOf(context).height;
-    final rowHeight = (settings.fontSize * settings.lineHeight + 4).clamp(
-      1.0,
-      viewportHeight,
-    );
+    final rowHeight = _bodyRowHeight(settings).clamp(1.0, viewportHeight);
     final visibleRows = (viewportHeight / rowHeight).floor().clamp(1, 80);
     final visualTarget = textLayerKey.currentState?.rawIndexForVisualLineMove(
       direction * visibleRows,
@@ -1349,6 +1350,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           },
           teleprompterFontFamily: settings.teleprompterFontFamily,
           grayReadChars: settings.grayReadChars,
+          readingEmphasisEnabled: settings.readingEmphasisEnabled,
+          currentCharColor: settings.currentCharColor,
+          readCharColor: settings.readCharColor,
+          currentCharScale: settings.currentCharScale,
           textColor: settings.textColor,
           letterSpacing: settings.letterSpacing,
           highlightCurrentChar: settings.highlightCurrentChar,
@@ -1376,8 +1381,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         (settings.readingLineOffset > 0
             ? settings.readingLineOffset
             : defaultRatio);
-    // 每行实际高度 = fontSize * lineHeight（文本） + 4（Padding vertical:2 上下各2px）
-    final perLineHeight = settings.fontSize * settings.lineHeight + 4;
+    // 正文始终按最大突出尺寸预留行高，改变突出倍率不会移动阅读框。
+    final perLineHeight = _bodyRowHeight(settings);
     // 阅读区域高度 = 3 行（与原版一致，修正 padding 的影响）
     final areaHeight = perLineHeight * 3 - 2; // 略减2px避免与上下行边界重叠
     // 水平边距计算（与文本层一致）

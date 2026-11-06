@@ -21,6 +21,7 @@ import '../theme/app_colors.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/settings/about_settings_section.dart';
 import '../widgets/settings/quick_mode_settings_section.dart';
+import '../widgets/settings/reading_emphasis_settings_section.dart';
 
 part 'settings/settings_asr_advanced_dialog.dart';
 part 'settings/settings_backup_section.dart';
@@ -72,6 +73,13 @@ class SettingsPage extends StatelessWidget {
                   _buildSectionHeader(context, '应用字体'),
                   const SizedBox(height: 12),
                   _buildFontFamilyTile(context, provider, settings),
+
+                  const SizedBox(height: 24),
+
+                  // ── 全局阅读提示 ──
+                  _buildSectionHeader(context, '阅读提示'),
+                  const SizedBox(height: 12),
+                  const ReadingEmphasisSettingsSection(),
 
                   const SizedBox(height: 24),
 
@@ -1138,12 +1146,24 @@ class SettingsPage extends StatelessWidget {
                       child: const Text('取消'),
                     ),
                     TextButton(
-                      onPressed: () {
-                        provider.resetAllSettings();
+                      onPressed: () async {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(const SnackBar(content: Text('设置已重置')));
+                        try {
+                          await provider.resetAllSettings();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              const SnackBar(content: Text('设置已重置')),
+                            );
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              const SnackBar(content: Text('重置失败，请重试')),
+                            );
+                        }
                       },
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.error,

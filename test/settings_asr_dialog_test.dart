@@ -33,6 +33,10 @@ void main() {
 
     final advancedTile = find.text('下载与高级设置');
     await tester.scrollUntilVisible(advancedTile, 250);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(advancedTile);
+    await tester.pumpAndSettle();
+    expect(advancedTile.hitTestable(), findsOneWidget);
     await tester.tap(advancedTile);
     await tester.pumpAndSettle();
     expect(find.text('使用系统代理下载'), findsOneWidget);
