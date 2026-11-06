@@ -40,12 +40,12 @@
 $env:CI = 'true'
 $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
 flutter --suppress-analytics pub get --enforce-lockfile
-flutter --suppress-analytics analyze --no-pub
+flutter --suppress-analytics analyze --no-pub lib test
 flutter --suppress-analytics test --no-pub
 flutter --suppress-analytics build windows --release --no-pub --dart-define=APP_VERSION=1.7.0-internal.1
 ```
 
-上面的自动化环境标记使开发工具跳过云主机环境探测，不影响应用运行。
+上面的自动化环境标记使开发工具跳过云主机环境探测，不影响应用运行。静态检查明确覆盖应用与测试目录，避免把项目目录内另行存放的开发工具及其依赖缓存也当成应用源码检查。
 
 ## 验证范围
 

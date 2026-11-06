@@ -137,8 +137,81 @@ class ReadingGlyphPlacement {
   final ReadingGrapheme grapheme;
   final Rect cell;
   final ReadingVisualRow row;
+  final double horizontalAnchorOffset;
 
-  const ReadingGlyphPlacement(this.grapheme, this.cell, this.row);
+  const ReadingGlyphPlacement(
+    this.grapheme,
+    this.cell,
+    this.row, {
+    this.horizontalAnchorOffset = 0,
+  });
+
+  double get paintAnchorX => cell.center.dx + horizontalAnchorOffset;
+}
+
+/// A synthetic italic shear changes ink bounds without changing advances.
+/// Skia uses x' = x - 0.25 * y, relative to the alphabetic baseline. In
+/// particular, Windows can expose an Oblique face separately from Italic and
+/// apply this shear to an already slanted face. Reserve its union with the
+/// unsheared face on BOTH platforms, rather than changing positions at paint
+/// time or assuming advance widths enclose the ink.
+///
+/// Source, pinned to Flutter 3.44.1's Skia revision:
+/// https://github.com/google/skia/blob/e9ed4fc9f1544c58d8a9347c1fc9471d8dd7c465/modules/skparagraph/src/OneLineShaper.cpp
+@immutable
+class _ItalicShearEnvelope {
+  static const double _maximumShear = 0.25;
+  final double left;
+  final double right;
+
+  const _ItalicShearEnvelope(this.left, this.right);
+
+  double get spacing => left + right;
+  double get anchorOffset => (left - right) / 2;
+
+  static Map<TextStyle, _ItalicShearEnvelope> measure(
+    List<ReadingGrapheme> graphemes,
+    ReadingTextGeometry geometry,
+    TextDirection direction,
+  ) {
+    // One native measurement per italic metric style, not per character. Use
+    // the actual text so CJK/emoji fallback metrics are included. This pass is
+    // only performed when fixed paragraph geometry is rebuilt.
+    final texts = <TextStyle, StringBuffer>{};
+    for (final glyph in graphemes) {
+      if (!glyph.format.italic) continue;
+      final style = geometry.styleFor(glyph.format, reserve: true);
+      (texts[style] ??= StringBuffer()).write(glyph.text);
+    }
+    final result = <TextStyle, _ItalicShearEnvelope>{};
+    for (final entry in texts.entries) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: entry.value.toString(),
+          // Font ascent/descent must not shrink with a user's line-height
+          // setting: the shear acts on the full glyph, not the line box.
+          style: entry.key.copyWith(
+            height: ui.kTextHeightNone,
+            letterSpacing: 0,
+          ),
+        ),
+        textDirection: direction,
+        textScaler: TextScaler.noScaling,
+      )..layout();
+      var ascent = 0.0;
+      var descent = 0.0;
+      for (final metrics in painter.computeLineMetrics()) {
+        ascent = math.max(ascent, metrics.ascent);
+        descent = math.max(descent, metrics.descent);
+      }
+      result[entry.key] = _ItalicShearEnvelope(
+        descent * _maximumShear,
+        ascent * _maximumShear,
+      );
+      painter.dispose();
+    }
+    return result;
+  }
 }
 
 /// One paragraph's fixed wrapping, baselines and hit-test coordinates.
@@ -154,6 +227,7 @@ class ReadingTextLayout {
   final TextDirection direction;
   final List<ReadingGrapheme> graphemes;
   final TextPainter _painter;
+  final Map<TextStyle, _ItalicShearEnvelope> _italicEnvelopes;
   late final List<ReadingVisualRow> rows = _computeRows();
   final LinkedHashMap<int, ReadingGlyphPlacement> _placements = LinkedHashMap();
   static const int _placementCacheLimit = 2048;
@@ -165,7 +239,9 @@ class ReadingTextLayout {
     required this.direction,
     required this.graphemes,
     required TextPainter painter,
-  }) : _painter = painter;
+    required Map<TextStyle, _ItalicShearEnvelope> italicEnvelopes,
+  }) : _painter = painter,
+       _italicEnvelopes = italicEnvelopes;
 
   factory ReadingTextLayout({
     required ScriptLine line,
@@ -174,13 +250,24 @@ class ReadingTextLayout {
     required TextDirection direction,
   }) {
     final graphemes = _splitGraphemes(line);
+    final italicEnvelopes = _ItalicShearEnvelope.measure(
+      graphemes,
+      geometry,
+      direction,
+    );
     final spans = <TextSpan>[];
     TextStyle? previousStyle;
     var text = StringBuffer();
     // Coalesce equal metric runs; a long plain paragraph does not need a
     // TextSpan per UTF-16 code unit to be measured.
     for (final glyph in graphemes) {
-      final style = geometry.styleFor(glyph.format, reserve: true);
+      var style = geometry.styleFor(glyph.format, reserve: true);
+      final italicEnvelope = italicEnvelopes[style];
+      if (italicEnvelope != null) {
+        style = style.copyWith(
+          letterSpacing: style.letterSpacing! + italicEnvelope.spacing,
+        );
+      }
       if (previousStyle != null && style != previousStyle) {
         spans.add(TextSpan(text: text.toString(), style: previousStyle));
         text = StringBuffer();
@@ -203,6 +290,7 @@ class ReadingTextLayout {
       direction: direction,
       graphemes: graphemes,
       painter: painter,
+      italicEnvelopes: italicEnvelopes,
     );
   }
 
@@ -341,6 +429,10 @@ class ReadingTextLayout {
         row.bottom,
       ),
       row,
+      horizontalAnchorOffset:
+          _italicEnvelopes[geometry.styleFor(glyph.format, reserve: true)]
+              ?.anchorOffset ??
+          0,
     );
     if (_placements.length >= _placementCacheLimit) {
       _placements.remove(_placements.keys.first);
@@ -587,10 +679,12 @@ class ReadingTextPainter extends CustomPainter {
         TextBaseline.alphabetic,
       );
       // There is exactly ONE glyph draw, not an enlarged copy over a normal
-      // glyph. Cell centre and baseline remain unchanged at every scale.
+      // glyph. The fixed ink-envelope anchor and baseline remain unchanged at
+      // every scale; advance-centering alone would push synthetic italics into
+      // their right-hand neighbour.
       canvas.save();
       canvas.translate(
-        placement.cell.center.dx - painter.width * scale / 2,
+        placement.paintAnchorX - painter.width * scale / 2,
         placement.row.baseline - baseline * scale,
       );
       canvas.scale(scale);

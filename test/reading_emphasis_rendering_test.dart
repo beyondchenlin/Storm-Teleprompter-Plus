@@ -404,6 +404,17 @@ void main() {
       lineHeight: 1.5,
       fontFamily: 'ReadingBearingFixture',
     );
+    // Independent font-table bounds (units/em = 2048) from the unchanged
+    // fixture. Their synthetic-shear envelopes make the Windows regression
+    // reproducible even on engines that correctly choose its native italic.
+    const outlines = <String, (double, double, double, double)>{
+      'f': (231, 0, 1268, 1556),
+      'j': (-63, -424, 1049, 1665),
+      'W': (41, 0, 1370, 1493),
+    };
+    ReadingTextLayout? fixedLayout;
+    List<Rect>? fixedCells;
+    List<double>? fixedAnchors;
     for (var index = 0; index < line.characters.length; index++) {
       await tester.pumpWidget(
         _lineHost(
@@ -419,15 +430,65 @@ void main() {
       final cell = layout.placementForRawIndex(index)!.cell;
       final raster = await _capture(tester, find.byKey(key));
       final ink = raster.colorBounds(_currentColor)!;
+      final glyph = layout.graphemes[index];
+      final appearance = _presentation(
+        index: index,
+        scale: 1.15,
+        bold: true,
+      ).appearanceFor(glyph, geometry);
+      final drawnPainter = cache.painterFor(
+        glyph.text,
+        appearance.style,
+        TextDirection.ltr,
+      );
+      expect(
+        drawnPainter.width,
+        closeTo(42 * 1233 / 2048, 0.01),
+        reason: 'The real fixture must be loaded, not a square test fallback.',
+      );
+      final placement = layout.placementForRawIndex(index)!;
+      final outline = outlines[glyph.text];
+      if (outline != null) {
+        final unitScale = 42 * 1.15 / 2048;
+        final originX = placement.paintAnchorX - drawnPainter.width * 1.15 / 2;
+        expect(
+          originX + (outline.$1 + 0.25 * outline.$2) * unitScale,
+          greaterThanOrEqualTo(cell.left),
+          reason: 'Unclipped synthetic-italic outline left: ${glyph.text}',
+        );
+        expect(
+          originX + (outline.$3 + 0.25 * outline.$4) * unitScale,
+          lessThanOrEqualTo(cell.right),
+          reason: 'Unclipped synthetic-italic outline right: ${glyph.text}',
+        );
+      }
+      final cells = [
+        for (var i = 0; i < layout.graphemes.length; i++)
+          layout.placementAt(i).cell,
+      ];
+      final anchors = [
+        for (var i = 0; i < layout.graphemes.length; i++)
+          layout.placementAt(i).paintAnchorX,
+      ];
+      fixedLayout ??= layout;
+      fixedCells ??= cells;
+      fixedAnchors ??= anchors;
+      expect(layout, same(fixedLayout));
+      expect(cells, fixedCells);
+      expect(anchors, fixedAnchors);
+      final diagnostics =
+          '${Platform.operatingSystem}: glyph=${glyph.text}, '
+          'cell=$cell, ink=$ink, anchor=${placement.paintAnchorX}, '
+          'drawnSize=${drawnPainter.size}, drawnStyle=${appearance.style}';
       expect(
         ink.left,
         greaterThanOrEqualTo(cell.left - 1),
-        reason: 'left bearing: ${line.characters[index].char}',
+        reason: 'left bearing: $diagnostics',
       );
       expect(
         ink.right,
         lessThanOrEqualTo(cell.right + 1),
-        reason: 'right bearing: ${line.characters[index].char}',
+        reason: 'right bearing: $diagnostics',
       );
       expect(ink.top, greaterThanOrEqualTo(cell.top - 1));
       expect(ink.bottom, lessThanOrEqualTo(cell.bottom + 1));
