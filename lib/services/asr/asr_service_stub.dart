@@ -100,6 +100,14 @@ class AsrService with ChangeNotifier {
 
   Future<void> cancelDownload() async {}
 
+  Future<void> prepareModel(
+    String modelId, {
+    bool useSystemProxy = true,
+    DownloadProgressCallback? onProgress,
+  }) async {
+    throw UnsupportedError('请在电脑主程序中使用语音识别');
+  }
+
   Future<bool> isModelDownloaded(String modelId) async => false;
 
   Future<List<AsrModelInfo>> listAvailableModels() async => const [];
@@ -130,6 +138,8 @@ class AsrService with ChangeNotifier {
     double rule1MinTrailingSilence = 2.4,
     double rule2MinTrailingSilence = 1.2,
     double rule3MinUtteranceLength = 20.0,
+    bool useSystemProxy = true,
+    DownloadProgressCallback? onProgress,
   }) async {
     throw UnsupportedError('ASR is not supported on Web.');
   }

@@ -1,0 +1,29 @@
+BK 提词器第三方组件说明
+
+产品创作者：陈林
+产品联系邮箱：beyond.chenlin@gmail.com
+
+1. 项目开源代码
+项目原有 LICENSE 文件随软件保留。第三方及上游作者的版权归其原权利人所有。
+
+2. Microsoft Visual C++ Runtime（微软 C++ 运行库）
+安装包采用应用目录内部署方式，包含来自 Microsoft Visual Studio（微软开发工具）
+官方 VC/Redist/MSVC/x64 再分发目录的运行库。文件保持原始微软数字签名，
+不从系统目录复制，不注册为全系统组件，也不需要管理员安装运行库。
+具体文件、版本和校验值记录在 bk-build-receipt.json（构建凭据）及产品文件清单中。
+相关部署说明：https://learn.microsoft.com/cpp/windows/deployment-in-visual-cpp
+运行库的版权及许可条件由 Microsoft（微软）保留；原文件中的署名与版权信息未改动。
+
+3. Inno Setup（安装器制作工具）
+安装器使用 Inno Setup 制作，版权归 Jordan Russell、Martijn Laan 等原作者所有。
+许可证全文随附于 InnoSetup-LICENSE.txt。
+简体中文安装消息来自其官方源代码仓库的中文翻译文件，原作者署名保留在源文件中。
+官方地址：https://jrsoftware.org/
+
+4. 中文语音模型
+安装包内置模型的名称、来源、固定修订版本及每个文件的 SHA256（内容校验值）
+记录在 bundled_models/zipformer2-ced/model-manifest.json（模型清单）中。
+模型的版权及其原许可归原权利人所有。此处的产品创作者署名不替代第三方署名。
+该模型卡声明 Apache-2.0（阿帕奇第二版开放许可）。原模型卡、官方许可证全文、
+固定下载修订及核查说明分别见 ChineseModel-README.md、Apache-2.0.txt、
+model-license-source.json 与 ChineseModel-SOURCE.txt。

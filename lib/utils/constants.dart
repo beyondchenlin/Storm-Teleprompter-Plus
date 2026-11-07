@@ -29,6 +29,9 @@ abstract final class StorageConstants {
   static const String ignoredUpdateVersionKey = 'ignored_update_version';
 
   static const String desktopDataDirectoryName = 'app_data';
+  static const String windowsInstalledMarkerFileName = 'bk-installed.json';
+  static const String windowsUserDataDirectoryName = 'BKTeleprompter';
+  static const String bundledAsrModelsDirectoryName = 'bundled_models';
   static const String desktopPreferencesFileName = 'application.json';
   static const String logDirectoryName = 'logs';
   static const String startupLogFilePrefix = 'BK 提词器-startup-';

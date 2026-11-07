@@ -54,6 +54,8 @@ class TeleprompterProvider with ChangeNotifier {
   String _asrTranscript = '';
   String _asrStatus = 'idle';
   String? _asrError;
+  String? _asrMessage;
+  int _asrStartGeneration = 0;
   StreamSubscription<WsMessage>? _asrResultSubscription;
   StreamSubscription<WsMessage>? _asrStatusSubscription;
   bool _disposed = false;
@@ -76,6 +78,7 @@ class TeleprompterProvider with ChangeNotifier {
   String get asrTranscript => _asrTranscript;
   String get asrStatus => _asrStatus;
   String? get asrError => _asrError;
+  String? get asrMessage => _asrMessage;
   bool get isAsrLoading => _asrStatus == 'loading';
   bool get controlsVisible => _controlsVisible;
   bool get controlsPinned => _controlsPinned;
@@ -137,10 +140,26 @@ class TeleprompterProvider with ChangeNotifier {
     if (_disposed) return;
     final articleId = message.data['articleId'] as String? ?? '';
     if (articleId.isNotEmpty && articleId != _articleId) return;
+    // A failed start has already cancelled the backend. Keep its explanation
+    // until an explicit retry or script reload, even if old status packets arrive.
+    if (_asrStatus == 'error' &&
+        _asrError != null &&
+        !isPlaying &&
+        message.data['status'] != 'error') {
+      return;
+    }
     _asrStatus = message.data['status'] as String? ?? _asrStatus;
     _asrTranscript = message.data['text'] as String? ?? _asrTranscript;
     _rms = (message.data['rms'] as num?)?.toDouble() ?? _rms;
-    _asrError = message.data['error'] as String?;
+    final incomingError = message.data['error'] as String?;
+    if (incomingError != null || _asrStatus != 'paused') {
+      _asrError = incomingError;
+    }
+    _asrMessage = message.data['message'] as String?;
+    if (_asrStatus == 'error') {
+      _asrMessage = null;
+      _pauseForAsrFailure();
+    }
     final index = (message.data['currentIndex'] as num?)?.toInt();
     final allowBackward = message.data['allowBackward'] as bool? ?? false;
     // 启动、暂停和状态消息中的位置只是服务端快照，可能晚于用户的手动移动。
@@ -322,6 +341,7 @@ class TeleprompterProvider with ChangeNotifier {
     _asrTranscript = '';
     _asrStatus = 'idle';
     _asrError = null;
+    _asrMessage = null;
     _rms = 0;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _playStartTime = null;
@@ -663,41 +683,88 @@ class TeleprompterProvider with ChangeNotifier {
     final connection = _connection;
     if (connection == null || !connection.isConnected) {
       _asrStatus = 'error';
-      _asrError = '服务端未连接';
+      _asrError = '本机连接已断开，请重新打开软件后重试。';
+      _asrMessage = null;
+      _pauseForAsrFailure();
       return;
     }
     _asrStatus = 'loading';
     _asrError = null;
-    unawaited(_startAsrAfterCursorSync(connection));
+    _asrMessage = '正在准备语音识别…';
+    final generation = ++_asrStartGeneration;
+    unawaited(_startAsrAfterCursorSync(connection, generation));
   }
 
-  Future<void> _startAsrAfterCursorSync(ConnectionProvider connection) async {
+  Future<void> _startAsrAfterCursorSync(
+    ConnectionProvider connection,
+    int generation,
+  ) async {
     try {
       // 恢复识别前先等待服务端接受当前字，避免 ASR 使用暂停前的旧锚点。
       await _syncToBackendReliably(_currentSyncData());
-      if (!isPlaying || _activeAutoMode != ScrollMode.asr) return;
+      if (_disposed ||
+          generation != _asrStartGeneration ||
+          !isPlaying ||
+          _activeAutoMode != ScrollMode.asr) {
+        return;
+      }
       final response = await connection.request(
         WsMessageType.asrStart,
-        timeout: const Duration(minutes: 2),
+        timeout: const Duration(minutes: 10),
       );
-      if (_disposed) return;
+      if (_disposed || generation != _asrStartGeneration) return;
       _applyAsrMessage(response);
-    } catch (error) {
-      if (_disposed) return;
+    } catch (error, stackTrace) {
+      if (_disposed || generation != _asrStartGeneration) return;
+      debugPrint('[Teleprompter] 语音启动失败: $error\n$stackTrace');
       _asrStatus = 'error';
-      _asrError = error.toString();
+      _asrMessage = null;
+      _asrError = _asrFailureMessage(error);
+      _pauseForAsrFailure();
       notifyListeners();
     }
   }
 
+  String _asrFailureMessage(Object error) {
+    if (error is TimeoutException) {
+      return '语音准备超时，请检查网络或在设置中重新下载模型后重试。';
+    }
+    final details = error.toString().replaceFirst(
+      RegExp(r'^(Exception|Bad state):\s*'),
+      '',
+    );
+    if (RegExp(r'[\u4e00-\u9fff]').hasMatch(details)) return details;
+    return '语音启动失败，请检查麦克风和模型后重试。详细原因已记入日志。';
+  }
+
+  void _pauseForAsrFailure() {
+    if (!isPlaying || _activeAutoMode != ScrollMode.asr) return;
+    _stopAsr();
+    if (_playStartTime != null) {
+      _elapsedBeforePause += DateTime.now().difference(_playStartTime!);
+    }
+    _playStartTime = null;
+    _state = TeleprompterState.paused;
+    _rms = 0;
+    _stopAutoScroll();
+    _cancelHideControls();
+    _controlsVisible = true;
+    _syncToBackend(reliable: true);
+  }
+
   void _stopAsr() {
+    final generation = ++_asrStartGeneration;
+    _asrMessage = null;
+    if (_asrStatus != 'error') _asrStatus = 'paused';
     final connection = _connection;
     if (connection != null && connection.isConnected && connection.isLocal) {
       unawaited(
         connection
             .request(WsMessageType.asrPause)
             .then((message) {
-              if (!_disposed) _applyAsrMessage(message);
+              if (!_disposed && generation == _asrStartGeneration) {
+                _applyAsrMessage(message);
+              }
             })
             .catchError((Object error) {
               debugPrint('[Teleprompter] 暂停 ASR 失败: $error');
@@ -711,7 +778,7 @@ class TeleprompterProvider with ChangeNotifier {
 
   void _scheduleHideControls(AppSettings settings) {
     _cancelHideControls();
-    if (_controlsPinned || !settings.autoHideUI) return;
+    if (!isPlaying || _controlsPinned || !settings.autoHideUI) return;
 
     _hideControlsTimer = Timer(
       Duration(seconds: settings.autoHideDelaySeconds),

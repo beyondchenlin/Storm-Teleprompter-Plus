@@ -1,0 +1,27 @@
+中文语音模型来源与许可说明
+
+产品内显示名：中文语音模型（内置）
+产品内模型标识：zipformer2-ced
+上游模型：sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23
+原作者模型仓库：
+https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23
+
+本安装包使用魔搭公开镜像中的固定版本：
+https://modelscope.cn/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23
+固定修订：cfe8339af4318acf5354ad52344a4ac49ad385db
+镜像上传者：HZZSCIENCE
+
+本包保留 encoder、decoder、joiner 三份浮点模型及 tokens.txt 词表的原始字节。
+其文件大小与 SHA256（内容校验值）由同一份随源码固定的模型清单约束。
+许可证和来源说明是附加文档，不作为第五个模型文件参与识别引擎配置。
+
+原作者模型卡声明 Apache-2.0（阿帕奇第二版开放许可）。模型卡原文随附于
+ChineseModel-README.md；Apache（阿帕奇）官方许可证全文随附于 Apache-2.0.txt。
+2026-11-07 对原作者仓库与上述魔搭固定修订的文件列表核查：均包含该模型卡，
+未列出独立的 LICENSE（许可证）或 NOTICE（声明）文件。本说明没有伪造上游声明。
+许可证原文来源：https://www.apache.org/licenses/LICENSE-2.0.txt
+
+模型卡没有列出逐条训练样本清单。本说明记录实际分发文件的获取来源与原始许可，
+不增加未经原模型卡证实的训练数据声明。
+
+模型权利归原权利人所有。产品创作者陈林的署名仅适用于本产品定制部分。

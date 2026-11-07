@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "modelId": "zipformer2-ced",
+  "displayName": "中文语音模型（内置）",
+  "modelFamily": "zipformer",
+  "sampleRate": 16000,
+  "source": {
+    "modelscopeRepository": "HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+    "revision": "cfe8339af4318acf5354ad52344a4ac49ad385db",
+    "upstreamUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+    "license": "Apache-2.0"
+  },
+  "files": [
+    {
+      "role": "encoder",
+      "name": "encoder-epoch-99-avg-1.onnx",
+      "bytes": 40948171,
+      "sha256": "84c6a8f372686faa5b8f45f2d79f0816f76dcd9f547acb9a90eba2772d7eda8b",
+      "url": "https://modelscope.cn/api/v1/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/repo?Revision=cfe8339af4318acf5354ad52344a4ac49ad385db&FilePath=encoder-epoch-99-avg-1.onnx"
+    },
+    {
+      "role": "decoder",
+      "name": "decoder-epoch-99-avg-1.onnx",
+      "bytes": 7509745,
+      "sha256": "5ee0f03a2768ff1d5c83ef3a493243c7935d316cd41280037b14783a3467cc78",
+      "url": "https://modelscope.cn/api/v1/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/repo?Revision=cfe8339af4318acf5354ad52344a4ac49ad385db&FilePath=decoder-epoch-99-avg-1.onnx"
+    },
+    {
+      "role": "joiner",
+      "name": "joiner-epoch-99-avg-1.onnx",
+      "bytes": 7109975,
+      "sha256": "030212efaea9a8b6a4fa98faf6ac6055529c4408cf4865e898220ddd02780f34",
+      "url": "https://modelscope.cn/api/v1/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/repo?Revision=cfe8339af4318acf5354ad52344a4ac49ad385db&FilePath=joiner-epoch-99-avg-1.onnx"
+    },
+    {
+      "role": "tokens",
+      "name": "tokens.txt",
+      "bytes": 48697,
+      "sha256": "8b294db9045d6e5f94647f4c1eec1af4da143a75053c399611444b378ff966ac",
+      "url": "https://modelscope.cn/api/v1/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/repo?Revision=cfe8339af4318acf5354ad52344a4ac49ad385db&FilePath=tokens.txt"
+    }
+  ]
+}

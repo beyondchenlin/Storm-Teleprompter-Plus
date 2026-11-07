@@ -311,10 +311,13 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
       return;
     }
     // 扣除空气垫计算实际内容进度
-    final screenHeight = MediaQuery.of(context).size.height;
-    final topPad = screenHeight * (TeleprompterConstants.topPaddingVh / 100);
+    final viewportHeight = scrollController.position.viewportDimension;
+    final topPad =
+        textLayerKey.currentState?.topPadding ??
+        viewportHeight * (TeleprompterConstants.topPaddingVh / 100);
     final bottomPad =
-        screenHeight * (TeleprompterConstants.bottomPaddingVh / 100);
+        textLayerKey.currentState?.bottomPadding ??
+        viewportHeight * (TeleprompterConstants.bottomPaddingVh / 100);
     final contentExtent = maxScroll - topPad - bottomPad;
     if (contentExtent <= 0) {
       _scheduleViewportProgressUpdate(0.0);
