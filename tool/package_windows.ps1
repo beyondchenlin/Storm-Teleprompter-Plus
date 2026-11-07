@@ -140,9 +140,20 @@ BK 提词器 $($release.version)
   if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed: $LASTEXITCODE" }
   $temporaryInstaller = Join-Path $compileOutput $installerName
   $installerMetadata = (Get-Item -LiteralPath $temporaryInstaller).VersionInfo
-  if ($installerMetadata.ProductName -cne 'BK 提词器' -or $installerMetadata.CompanyName -cne '陈林' -or
-      $installerMetadata.ProductVersion -cne $release.productVersion) {
-    throw 'The compiled installer has incorrect product metadata.'
+  # Inno Setup pads fixed-size version-resource strings with ASCII spaces.
+  # Remove only U+0020 at the end; keep exact, case-sensitive identity checks.
+  $versionResourcePadding = [char[]]@([char]0x20)
+  $installerProductName = ([string]$installerMetadata.ProductName).TrimEnd($versionResourcePadding)
+  $installerCompanyName = ([string]$installerMetadata.CompanyName).TrimEnd($versionResourcePadding)
+  $installerProductVersion = ([string]$installerMetadata.ProductVersion).TrimEnd($versionResourcePadding)
+  $installerNumericProductVersion = '{0}.{1}.{2}.{3}' -f $installerMetadata.ProductMajorPart, $installerMetadata.ProductMinorPart, $installerMetadata.ProductBuildPart, $installerMetadata.ProductPrivatePart
+  $installerNumericFileVersion = '{0}.{1}.{2}.{3}' -f $installerMetadata.FileMajorPart, $installerMetadata.FileMinorPart, $installerMetadata.FileBuildPart, $installerMetadata.FilePrivatePart
+  if ($installerProductName -cne 'BK 提词器' -or $installerCompanyName -cne '陈林' -or
+      $installerProductVersion -cne $release.productVersion -or
+      $installerNumericProductVersion -cne $release.fileVersion -or
+      $installerNumericFileVersion -cne $release.fileVersion) {
+    $observed = [ordered]@{product=$installerProductName; company=$installerCompanyName; productVersion=$installerProductVersion; numericProductVersion=$installerNumericProductVersion; numericFileVersion=$installerNumericFileVersion}
+    throw ('The compiled installer has incorrect product metadata: ' + ($observed | ConvertTo-Json -Compress))
   }
   if ((Assert-BKCleanSource -ProjectRoot $projectRoot) -cne $sourceCommit) { throw 'The source changed while the installer was being created.' }
   $installerHash = (Get-FileHash -LiteralPath $temporaryInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
