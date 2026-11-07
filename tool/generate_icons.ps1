@@ -1,7 +1,7 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$iconPath = Join-Path $projectRoot 'assets\branding\BK103-source.jpg'
+$iconPath = Join-Path $projectRoot 'assets\branding\BK-Teleprompter-source.png'
 $configPath = Join-Path $projectRoot 'flutter_launcher_icons.yaml'
 
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {

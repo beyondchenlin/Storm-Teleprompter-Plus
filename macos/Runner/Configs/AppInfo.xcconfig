@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = BK103
+PRODUCT_NAME = BK 提词器
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.example.stormTeleprompterPlus
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 Html5syt and BK103 contributors. MIT License.
+PRODUCT_COPYRIGHT = Copyright © 2026 陈林. Contact: beyond.chenlin@gmail.com. MIT License.

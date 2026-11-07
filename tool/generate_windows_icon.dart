@@ -30,5 +30,5 @@ Future<void> main() async {
   );
   await destination.parent.create(recursive: true);
   await destination.writeAsBytes(image.IcoEncoder().encodeImages(frames));
-  stdout.writeln('BK103 Windows icon: ${sizes.join(", ")}px.');
+  stdout.writeln('BK 提词器 Windows icon: ${sizes.join(", ")}px.');
 }

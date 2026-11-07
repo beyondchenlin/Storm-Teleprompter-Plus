@@ -1,6 +1,6 @@
-<h1 align="center">BK103</h1>
+<h1 align="center">BK 提词器</h1>
 
-<p align="center"><img style="width: 400px; height: auto;" src="lib/favicon.png" alt="BK103" /></p>
+<p align="center"><img style="width: 400px; height: auto;" src="lib/favicon.png" alt="BK 提词器" /></p>
 
 <p align="center">
   <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/actions/workflows/debug.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/beyondchenlin/Storm-Teleprompter-Plus/debug.yml?branch=v2&amp;style=flat-square&amp;logo=githubactions&amp;logoColor=white&amp;label=build" /></a>
@@ -11,7 +11,9 @@
   <a href="https://github.com/beyondchenlin/Storm-Teleprompter-Plus/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/beyondchenlin/Storm-Teleprompter-Plus?style=flat-square&amp;logo=github" /></a>
 </p>
 
-BK103（智能提词器）基于 Flutter（跨平台开发框架）开发，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
+创作者：**陈林**。联系邮箱：[beyond.chenlin@gmail.com](mailto:beyond.chenlin@gmail.com)。
+
+BK 提词器（智能提词器）基于 Flutter（跨平台开发框架）开发，提供富文本稿件管理、自动滚动、离线语音跟随、分光镜镜像显示，以及局域网多设备同步。
 
 > [!NOTE]
 > 本产品在 [Storm Teleprompter Plus（上游提词器）](https://github.com/html5syt/Storm-Teleprompter-Plus) 基础上开发，保留原作者的许可证与署名。上游项目源自[影视飓风：AI真的好用吗？影视飓风全新工作流分享！](https://www.bilibili.com/video/BV16woRBfEsH/)中提到的**飓风提词器**，本项目将其从飞书妙搭中解耦，使其可以完全本地运行，并扩展了一些功能。你可以在 [notes/ori_code](notes/ori_code) 中查看原始代码。
@@ -19,7 +21,7 @@ BK103（智能提词器）基于 Flutter（跨平台开发框架）开发，提�
 > 原始版本地址：[飓风提词器](https://mcnt8r4c3f2k.aiforce.cloud/app/app_4k0qhy8j74gpb)
 
 > [!NOTE]
-> 你也可以查看[开发者亲自编写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解更多使用方法。
+> 你也可以查看[上游作者编写的使用文档](https://wuxiang-media-center.feishu.cn/wiki/AEUowJ2eKijtkNk7Ybkc5eNOn8d)了解更多使用方法。
 > 
 > 以下描述由 Codex 生成，虽然经过人工校对，但仍可能存在不准确或不完整的地方，请以实际使用为准。
 
@@ -49,7 +51,7 @@ BK103（智能提词器）基于 Flutter（跨平台开发框架）开发，提�
 
 ## 获取应用
 
-产品名和程序文件统一为 **BK103**。微软桌面系统解压后运行 `BK103.exe`；必须保留同目录的动态库和 `data`（程序资源）目录。升级时保留 `app_data`（稿件、设置和语音模型）目录。图标原图位于 `assets/branding/BK103-source.jpg`，保持上传图片不变；`lib/favicon.png` 是转换格式后的显示资源。通过 `tool/generate_icons.ps1` 统一生成各平台尺寸；微软桌面系统图标包含 16～256 像素的十种尺寸。
+产品名和程序文件统一为 **BK 提词器**。微软桌面系统解压后运行 `BK 提词器.exe`；必须保留同目录的动态库和 `data`（程序资源）目录。升级时保留 `app_data`（稿件、设置和语音模型）目录。图标原图位于 `assets/branding/BK-Teleprompter-source.png`，保持上传图片不变；`lib/favicon.png` 与原图字节一致，保留透明背景。通过 `tool/generate_icons.ps1` 统一生成各平台尺寸；微软桌面系统图标包含 16～256 像素的十种尺寸。
 
 本地打包使用 `tool/package_windows.ps1`，只收集程序、许可证和可选语音模型，不把个人稿件和设置放入分发包。
 
@@ -327,5 +329,5 @@ flutter test --no-pub
 
 如果你有新功能建议、Bug 报告或其他反馈，请在 [GitHub Issues](https://github.com/beyondchenlin/Storm-Teleprompter-Plus/issues) 中提交。
 
-<h2 align="right">Made with ❤ by Mr. Tim</h2>
-<h3 align="right">2026.7</h3>
+<h2 align="right">创作者：陈林</h2>
+<h3 align="right">beyond.chenlin@gmail.com · 2026.11</h3>

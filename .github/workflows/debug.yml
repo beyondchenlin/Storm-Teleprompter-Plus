@@ -11,7 +11,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: "3.44.1"
-  APP_NAME: BK103
+  APP_NAME: "BK 提词器"
 
 jobs:
   android:
@@ -67,7 +67,7 @@ jobs:
             abi="${abi#app-}"
             cp "$apk" "artifacts/${APP_NAME}-android-${abi}.apk"
           done
-          cp build/app/outputs/bundle/debug/app-debug.aab artifacts/${APP_NAME}-android.aab
+          cp build/app/outputs/bundle/debug/app-debug.aab "artifacts/${APP_NAME}-android.aab"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -98,7 +98,7 @@ jobs:
           flutter pub get
           flutter build linux --debug --dart-define=APP_VERSION="$VERSION"
           mkdir -p artifacts
-          tar -czf artifacts/${APP_NAME}-linux-x64.tar.gz -C build/linux/x64/debug/bundle .
+          tar -czf "artifacts/${APP_NAME}-linux-x64.tar.gz" -C build/linux/x64/debug/bundle .
 
       - uses: actions/upload-artifact@v4
         with:
@@ -125,7 +125,7 @@ jobs:
           flutter pub get
           flutter build windows --debug --dart-define=APP_VERSION=$version
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          Compress-Archive -Path build\windows\x64\runner\debug\* -DestinationPath artifacts\${env:APP_NAME}-windows-x64.zip -Force
+          Compress-Archive -Path build\windows\x64\runner\debug\* -DestinationPath "artifacts\${env:APP_NAME}-windows-x64.zip" -Force
 
       - uses: actions/upload-artifact@v4
         with:
@@ -157,8 +157,8 @@ jobs:
             echo "No macOS .app bundle found."
             exit 1
           fi
-          ditto -c -k --sequesterRsrc --keepParent "$MACOS_APP" artifacts/${APP_NAME}-macos.zip
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app artifacts/${APP_NAME}-ios-unsigned.zip
+          ditto -c -k --sequesterRsrc --keepParent "$MACOS_APP" "artifacts/${APP_NAME}-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app "artifacts/${APP_NAME}-ios-unsigned.zip"
 
       - uses: actions/upload-artifact@v4
         with:

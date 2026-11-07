@@ -45,19 +45,19 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "BK103");
+    gtk_header_bar_set_title(header_bar, "BK 提词器");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "BK103");
+    gtk_window_set_title(window, "BK 提词器");
   }
 
-  g_set_application_name("BK103");
+  g_set_application_name("BK 提词器");
   g_autofree gchar* executable_path = g_file_read_link("/proc/self/exe", nullptr);
   if (executable_path != nullptr) {
     g_autofree gchar* executable_directory = g_path_get_dirname(executable_path);
     g_autofree gchar* icon_path =
-        g_build_filename(executable_directory, "data", "BK103.png", nullptr);
+        g_build_filename(executable_directory, "data", "BK 提词器.png", nullptr);
     gtk_window_set_icon_from_file(window, icon_path, nullptr);
   }
   gtk_window_set_default_size(window, 1280, 720);

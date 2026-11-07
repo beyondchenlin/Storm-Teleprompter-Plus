@@ -114,10 +114,26 @@ class _AboutPageState extends State<AboutPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textMutedFor(context)),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppConstants.copyright,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textMutedFor(context)),
+                  ),
+                  const SizedBox(height: 20),
+                  const ListTile(
+                    leading: Icon(Icons.person_outline),
+                    title: Text('创作者'),
+                    subtitle: Text(AppConstants.creator),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.email_outlined),
+                    title: Text('联系邮箱'),
+                    subtitle: SelectableText(AppConstants.contactEmail),
+                  ),
                   ListTile(
                     leading: const Icon(Icons.code),
-                    title: const Text('访问 GitHub 项目主页'),
+                    title: const Text('访问项目主页'),
                     trailing: const Icon(Icons.open_in_new, size: 18),
                     onTap: () => _openUrl(githubProjectPageUrl),
                   ),
@@ -136,8 +152,8 @@ class _AboutPageState extends State<AboutPage> {
                   ),
                   ListTile(
                     leading: const Icon(Icons.description_outlined),
-                    title: const Text('License'),
-                    subtitle: const Text('MIT License'),
+                    title: const Text('开源许可'),
+                    subtitle: const Text('MIT（开源许可证）'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _showLicense,
                   ),
@@ -241,7 +257,7 @@ class _AboutPageState extends State<AboutPage> {
                   _openUrl(result.latestRelease.pageUrl);
                 },
                 icon: const Icon(Icons.system_update_alt),
-                label: Text(result.hasUpdate ? '前往更新' : '查看 Release'),
+                label: Text(result.hasUpdate ? '前往更新' : '查看发布页'),
               ),
           ],
         ),
@@ -270,7 +286,7 @@ class _AboutPageState extends State<AboutPage> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('MIT License'),
+        title: const Text('MIT（开源许可证）'),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640, maxHeight: 520),
           child: SingleChildScrollView(child: SelectableText(license)),

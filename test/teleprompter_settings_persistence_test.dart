@@ -93,7 +93,7 @@ void main() {
     expect(restored.teleprompterSettings, settings);
   });
 
-  test('BK103 can still import a backup carrying the original format id', () {
+  test('BK 提词器 can still import a backup carrying the original format id', () {
     final restored = AppBackup.fromJson({
       'format': 'storm-teleprompter-backup',
       'version': 1,
