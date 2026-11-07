@@ -23,6 +23,7 @@ const _readColorKey = 'reading-emphasis-read-color';
 const _scaleKey = 'reading-emphasis-scale';
 const _previewKey = 'reading-emphasis-preview';
 const _previewCurrentKey = 'reading-emphasis-preview-current';
+const _previewCurrentRestKey = 'reading-emphasis-preview-current-rest';
 const _previewReadKey = 'reading-emphasis-preview-read';
 const _previewUnreadKey = 'reading-emphasis-preview-unread';
 
@@ -68,6 +69,10 @@ void main() {
         const Color(0xFF22CC88),
       );
       expect(
+        _previewStyle(tester, scope, _previewCurrentRestKey).color,
+        const Color(0xFF22CC88),
+      );
+      expect(
         _previewStyle(tester, scope, _previewReadKey).color,
         const Color(0xFF667788),
       );
@@ -96,8 +101,12 @@ void main() {
     final readRect = tester.getRect(_within(panel, _previewReadKey));
     final currentRect = tester.getRect(_within(panel, _previewCurrentKey));
     final unreadRect = tester.getRect(_within(panel, _previewUnreadKey));
-    expect(currentRect.left, greaterThanOrEqualTo(readRect.right - 0.01));
-    expect(currentRect.right, lessThanOrEqualTo(unreadRect.left + 0.01));
+    final currentRestRect = tester.getRect(
+      _within(panel, _previewCurrentRestKey),
+    );
+    expect(currentRect.top, greaterThanOrEqualTo(readRect.bottom));
+    expect(currentRect.right, lessThanOrEqualTo(currentRestRect.left + 0.01));
+    expect(unreadRect.top, greaterThanOrEqualTo(currentRestRect.bottom));
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -133,7 +142,7 @@ void main() {
 
       await _pickColor(tester, _within(panel, _currentColorKey), '#FFFF8800');
       await _pickColor(tester, _within(panel, _readColorKey), '#FF556677');
-      final readSwitch = find.widgetWithText(SwitchListTile, '标记已读文字');
+      final readSwitch = find.widgetWithText(SwitchListTile, '标记已读段落');
       await _reveal(tester, panel, readSwitch);
       expect(tester.widget<SwitchListTile>(readSwitch).onChanged, isNotNull);
       await tester.tap(readSwitch);
@@ -145,6 +154,14 @@ void main() {
         _previewStyle(tester, panel, _previewCurrentKey).color,
         const Color(0xFFFF8800),
       );
+      expect(
+        _previewStyle(tester, panel, _previewCurrentRestKey).color,
+        const Color(0xFFFF8800),
+      );
+      expect(
+        _previewStyle(tester, panel, _previewUnreadKey).color,
+        Colors.white,
+      );
 
       await _reveal(tester, panel, _within(panel, _enabledKey));
       await tester.tap(_within(panel, _enabledKey));
@@ -152,6 +169,29 @@ void main() {
       expect(harness.settings.settings.readingEmphasisEnabled, isFalse);
       expect(
         _previewStyle(tester, panel, _previewCurrentKey).color,
+        Colors.white,
+      );
+      expect(
+        _previewStyle(tester, panel, _previewCurrentRestKey).color,
+        Colors.white,
+      );
+
+      // 整段高亮关闭后，已读段落仍能独立开启，且不重新点亮当前段。
+      await _reveal(tester, panel, readSwitch);
+      await tester.tap(readSwitch);
+      await tester.pumpAndSettle();
+      await _reveal(tester, panel, _within(panel, _previewKey));
+      expect(harness.settings.mergedSettings.grayReadChars, isTrue);
+      expect(
+        _previewStyle(tester, panel, _previewReadKey).color,
+        const Color(0xFF556677),
+      );
+      expect(
+        _previewStyle(tester, panel, _previewCurrentKey).color,
+        Colors.white,
+      );
+      expect(
+        _previewStyle(tester, panel, _previewCurrentRestKey).color,
         Colors.white,
       );
       expect(harness.teleprompter.isPlaying, isTrue);

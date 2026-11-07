@@ -665,13 +665,13 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ),
-        // 已读着色与当前字突出相互独立。
+        // 已读段落着色与当前段高亮相互独立。
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.opacity, size: 20),
-          title: const Text('标记已读文字', style: TextStyle(fontSize: 14)),
+          title: const Text('标记已读段落', style: TextStyle(fontSize: 14)),
           subtitle: const Text(
-            '已读过的文字使用上方设置的已读颜色',
+            '进入下一段后，上一整段使用已读颜色',
             style: TextStyle(fontSize: 12),
           ),
           value: settings.grayReadChars,

@@ -19,6 +19,8 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   bool _viewportProgressUpdateScheduled = false;
   double? _pendingViewportProgress;
   Timer? _articleSettingsSaveTimer;
+  // 所有提词页共享一个原生窗口，旧页退出清理必须先于新页窗口操作。
+  static Future<void>? _windowTransition;
 
   @override
   void initState() {
@@ -45,10 +47,15 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final settings = _settingsProvider!.mergedSettings;
-      // 自动进入全屏
-      if (settings.fullScreenMode) {
-        enterFullScreen();
+      if (_connectionProvider!.isRemote) {
+        // 接收端保留自身的投屏偏好，不修改远程会话协议。
+        if (_settingsProvider!.mergedSettings.fullScreenMode) {
+          unawaited(enterFullScreen());
+        }
+      } else if (_isDesktop) {
+        // 本地每次进入都使用普通窗口，不能让旧全局/稿件的 true 值
+        // 继续触发全屏，也不能继承首页已经最大化的原生窗口状态。
+        unawaited(_prepareWindowedEntry());
       }
     });
   }
@@ -57,6 +64,7 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
   void _initWindowListener() async {
     try {
       await windowManager.ensureInitialized();
+      if (!mounted) return;
       _windowListener = _WindowEventListener(this);
       windowManager.addListener(_windowListener!);
     } catch (e) {
@@ -174,58 +182,119 @@ mixin TeleprompterPageLogic<T extends StatefulWidget>
         defaultTargetPlatform == TargetPlatform.linux;
   }
 
-  Future<void> enterFullScreen() async {
-    if (isFullScreen) return;
-    if (mounted) setState(() => isFullScreen = true);
-
-    if (_isDesktop) {
-      try {
-        // 先隐藏标题栏，再进入全屏，顺序很重要
-        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-        await Future.delayed(const Duration(milliseconds: 50));
-        await windowManager.setFullScreen(true);
-      } catch (e) {
-        debugPrint('[FullScreen] 全屏失败，降级处理: $e');
-        // 降级：仅隐藏标题栏
-        try {
-          await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-        } catch (_) {}
-        try {
-          await windowManager.setFullScreen(true);
-        } catch (_) {}
-      }
-    } else if (!kIsWeb) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
+  /// 原生窗口操作串行执行，避免首次还原和快速手动切换互相覆盖。
+  Future<void> _queueWindowTransition(Future<void> Function() transition) {
+    final pending = _windowTransition;
+    final next =
+        (pending == null
+                ? Future<void>.sync(transition)
+                : pending.then((_) => transition()))
+            .catchError((Object error, StackTrace stack) {
+              debugPrint('[WindowTransition] 窗口切换失败: $error');
+            });
+    _windowTransition = next;
+    return next.whenComplete(() {
+      // 空闲后释放已完成的异步链，不让下一次会话依附旧页面的执行环境。
+      if (identical(_windowTransition, next)) _windowTransition = null;
+    });
   }
 
-  Future<void> exitFullScreen({bool updateState = true}) async {
-    if (!isFullScreen && updateState) return;
+  Future<void> _prepareWindowedEntry() => _queueWindowTransition(() async {
+    if (!mounted) return;
+    var restoreTitleBar = false;
+    try {
+      await windowManager.ensureInitialized();
+      if (!mounted) return;
+      final wasFullScreen = await windowManager.isFullScreen();
+      if (!mounted) return;
+      if (wasFullScreen) {
+        restoreTitleBar = true;
+        await windowManager.setFullScreen(false);
+      }
+      if (!mounted) return;
+      final wasMaximized = await windowManager.isMaximized();
+      if (!mounted) return;
+      if (wasMaximized) {
+        restoreTitleBar = true;
+        await windowManager.unmaximize();
+      }
+      // 交由系统恢复普通窗口的既有尺寸与位置，不覆盖用户窗口大小。
+      restoreTitleBar = true;
+    } catch (e) {
+      debugPrint('[WindowEntry] 还原普通窗口失败: $e');
+    } finally {
+      // 已改变原生模式后即使页面离开，也要完成标题栏清理；仅查询
+      // 尚未返回就销毁的页面则不会再发起窗口改动。
+      if (restoreTitleBar) {
+        try {
+          await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+        } catch (e) {
+          debugPrint('[WindowEntry] 恢复标题栏失败: $e');
+        }
+      }
+    }
+  });
+
+  Future<void> enterFullScreen() {
+    if (isFullScreen || !mounted) return Future<void>.value();
+    setState(() => isFullScreen = true);
+
+    return _queueWindowTransition(() async {
+      if (!mounted || !isFullScreen) return;
+      if (_isDesktop) {
+        try {
+          // 先隐藏标题栏，再进入全屏，顺序很重要。
+          await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (!mounted || !isFullScreen) return;
+          await windowManager.setFullScreen(true);
+        } catch (e) {
+          debugPrint('[FullScreen] 全屏失败，降级处理: $e');
+          if (!mounted || !isFullScreen) return;
+          try {
+            await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+          } catch (_) {}
+          if (!mounted || !isFullScreen) return;
+          try {
+            await windowManager.setFullScreen(true);
+          } catch (_) {}
+        }
+      } else if (!kIsWeb) {
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+        if (!mounted || !isFullScreen) return;
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
+  }
+
+  Future<void> exitFullScreen({bool updateState = true}) {
+    if (!isFullScreen && updateState) return Future<void>.value();
     if (updateState && mounted) {
       setState(() => isFullScreen = false);
     } else {
       isFullScreen = false;
     }
 
-    if (_isDesktop) {
-      try {
-        await windowManager.setFullScreen(false);
-        await Future.delayed(const Duration(milliseconds: 50));
-        await windowManager.setTitleBarStyle(TitleBarStyle.normal);
-      } catch (e) {
-        debugPrint('[FullScreen] 退出全屏失败: $e');
+    return _queueWindowTransition(() async {
+      if (_isDesktop) {
+        try {
+          await windowManager.setFullScreen(false);
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+        } catch (e) {
+          debugPrint('[FullScreen] 退出全屏失败: $e');
+        }
+      } else if (!kIsWeb) {
+        await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.manual,
+          overlays: SystemUiOverlay.values,
+        );
       }
-    } else if (!kIsWeb) {
-      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-      await SystemChrome.setEnabledSystemUIMode(
-        SystemUiMode.manual,
-        overlays: SystemUiOverlay.values,
-      );
-    }
+    });
   }
 
   void toggleFullScreen() {

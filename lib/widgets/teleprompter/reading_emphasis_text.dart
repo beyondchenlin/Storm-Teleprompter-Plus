@@ -28,6 +28,7 @@ class ReadingGrapheme {
   final int rawStart;
   final int rawEnd;
   final ScriptCharacter format;
+  final ScriptParagraph? paragraph;
 
   const ReadingGrapheme({
     required this.text,
@@ -36,6 +37,7 @@ class ReadingGrapheme {
     required this.rawStart,
     required this.rawEnd,
     required this.format,
+    this.paragraph,
   });
 
   bool containsRawIndex(int index) => index >= rawStart && index <= rawEnd;
@@ -308,6 +310,19 @@ class ReadingTextLayout {
 
   static List<ReadingGrapheme> _splitGraphemes(ScriptLine line) {
     if (line.characters.isEmpty) return const [];
+    // Metadata is resolved once with geometry, never by scanning the script
+    // while the reading cursor or microphone level changes. Legacy callers
+    // that construct a ScriptLine directly still get whole-line colouring.
+    final paragraph =
+        line.paragraph ??
+        ScriptParagraph(
+          index: line.lineIndex,
+          rawStart: line.characters.first.rawIndex,
+          rawEnd:
+              line.characters.last.rawIndex +
+              line.characters.last.char.length -
+              1,
+        );
     final text = line.text;
     final result = <ReadingGrapheme>[];
     var sourceIndex = 0;
@@ -337,6 +352,7 @@ class ReadingTextLayout {
           rawStart: rawStart,
           rawEnd: line.characters[lastIndex].rawIndex + end - lastOffset - 1,
           format: first,
+          paragraph: paragraph,
         ),
       );
       offset = end;
@@ -346,6 +362,10 @@ class ReadingTextLayout {
 
   double get height =>
       graphemes.isEmpty ? geometry.emptyHeight : _painter.height;
+
+  /// Width of this authored line without automatic wrapping. This shares the
+  /// same reserved emphasis and italic ink envelopes as the visible layout.
+  double get maxIntrinsicWidth => _painter.maxIntrinsicWidth;
 
   List<ReadingVisualRow> _computeRows() => _painter
       .computeLineMetrics()
@@ -487,12 +507,14 @@ class ReadingGlyphAppearance {
   final TextStyle style;
   final double scale;
   final bool isCurrent;
+  final bool isCurrentParagraph;
   final bool isRead;
 
   const ReadingGlyphAppearance({
     required this.style,
     required this.scale,
     required this.isCurrent,
+    this.isCurrentParagraph = false,
     required this.isRead,
   });
 }
@@ -529,11 +551,15 @@ class ReadingTextPresentation {
     ReadingTextGeometry geometry,
   ) {
     final current = !continuous && glyph.containsRawIndex(currentIndex);
-    final read = !continuous && glyph.rawEnd < currentIndex;
+    final paragraph = glyph.paragraph;
+    final currentParagraph =
+        !continuous && (paragraph?.containsRawIndex(currentIndex) ?? current);
+    final read =
+        !continuous && (paragraph?.rawEnd ?? glyph.rawEnd) < currentIndex;
     final originalColor = Color(
       glyph.format.textColor ?? (textColor == 0 ? 0xFFFFFFFF : textColor),
     );
-    final color = current && enabled
+    final color = currentParagraph && enabled
         ? Color(currentCharColor)
         : read && grayReadChars
         ? Color(readCharColor)
@@ -560,6 +586,7 @@ class ReadingTextPresentation {
           ? clampReadingEmphasisScale(currentCharScale)
           : 1,
       isCurrent: current,
+      isCurrentParagraph: currentParagraph,
       isRead: read,
     );
   }
@@ -571,6 +598,15 @@ class ReadingTextPresentation {
             layout.graphemes.first.rawStart - 1,
             layout.graphemes.last.rawEnd + 1,
           ),
+    // A paragraph can span several authored <br> lines. Its early line must
+    // repaint when the cursor leaves the paragraph even though the clamped
+    // per-line cursor was already past that line's last glyph.
+    continuous || layout.graphemes.isEmpty
+        ? false
+        : layout.graphemes.first.paragraph!.containsRawIndex(currentIndex),
+    continuous || layout.graphemes.isEmpty
+        ? false
+        : layout.graphemes.first.paragraph!.rawEnd < currentIndex,
     continuous,
     enabled,
     grayReadChars,

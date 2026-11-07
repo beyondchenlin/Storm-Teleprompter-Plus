@@ -29,7 +29,7 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
           key: const ValueKey('reading-emphasis-enabled'),
           contentPadding: EdgeInsets.zero,
           dense: true,
-          title: const Text('当前字突出', style: TextStyle(fontSize: 14)),
+          title: const Text('整段高亮', style: TextStyle(fontSize: 14)),
           subtitle: const Text('语音跟随和按行模式生效', style: TextStyle(fontSize: 12)),
           value: settings.readingEmphasisEnabled,
           onChanged: (value) =>
@@ -38,7 +38,7 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
         _buildColorTile(
           context,
           key: const ValueKey('reading-emphasis-current-color'),
-          title: '突出颜色',
+          title: '当前段颜色',
           color: Color(settings.currentCharColor),
           defaultColor: Color(const AppSettings().currentCharColor),
           save: provider.setCurrentCharColor,
@@ -46,7 +46,7 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
         _buildColorTile(
           context,
           key: const ValueKey('reading-emphasis-read-color'),
-          title: '已读颜色',
+          title: '已读段颜色',
           color: Color(settings.readCharColor),
           defaultColor: Color(const AppSettings().readCharColor),
           save: provider.setReadCharColor,
@@ -54,7 +54,9 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            const Expanded(child: Text('放大幅度', style: TextStyle(fontSize: 14))),
+            const Expanded(
+              child: Text('当前字放大幅度', style: TextStyle(fontSize: 14)),
+            ),
             Text(
               '${enlargement.round()}%',
               key: const ValueKey('reading-emphasis-scale-value'),
@@ -90,7 +92,7 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          '效果预览 · “正”为当前字',
+          '效果预览 · 整段变色，“正”为朗读位置',
           style: TextStyle(
             fontSize: 12,
             color: AppColors.textSecondaryFor(context),
@@ -103,7 +105,7 @@ class ReadingEmphasisSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          '对所有稿件生效，调整后自动保存',
+          '按原稿分段，自动折行不拆段。对所有稿件生效，调整后自动保存',
           style: TextStyle(
             fontSize: 12,
             color: AppColors.textMutedFor(context),
@@ -235,12 +237,11 @@ class _ReadingEmphasisPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.borderFor(context)),
       ),
-      child: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '已读，',
+            '上一段已读。',
             key: const ValueKey('reading-emphasis-preview-read'),
             style: baseStyle.copyWith(
               color: appearance.grayReadChars
@@ -248,37 +249,50 @@ class _ReadingEmphasisPreview extends StatelessWidget {
                   : baseColor,
             ),
           ),
-          // 固定预留最大倍率及两侧余量，调整时相邻文字不移动也不受挤压。
-          SizedBox(
-            width: previewFontSize * AppSettings.maxCurrentCharScale + 4,
-            height: previewFontSize * 1.5 * AppSettings.maxCurrentCharScale,
-            child: Center(
-              child: Transform.scale(
-                key: const ValueKey('reading-emphasis-preview-scale'),
-                scale: settings.readingEmphasisEnabled
-                    ? settings.currentCharScale
-                    : 1,
-                child: Text(
-                  '正',
-                  key: const ValueKey('reading-emphasis-preview-current'),
-                  style: baseStyle.copyWith(
-                    color: currentColor,
-                    fontWeight: appearance.highlightCurrentChar
-                        ? (appearance.defaultBold
-                              ? FontWeight.w900
-                              : FontWeight.w700)
-                        : baseStyle.fontWeight,
-                    decoration: appearance.underlineCurrentChar
-                        ? TextDecoration.underline
-                        : TextDecoration.none,
-                    decorationColor: currentColor,
+          const SizedBox(height: 8),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // 只改变当前字的可选形状；整段的颜色始终保持一致。
+              // 固定预留最大倍率，调整时其余文字不移动也不受挤压。
+              SizedBox(
+                width: previewFontSize * AppSettings.maxCurrentCharScale + 4,
+                height: previewFontSize * 1.5 * AppSettings.maxCurrentCharScale,
+                child: Center(
+                  child: Transform.scale(
+                    key: const ValueKey('reading-emphasis-preview-scale'),
+                    scale: settings.readingEmphasisEnabled
+                        ? settings.currentCharScale
+                        : 1,
+                    child: Text(
+                      '正',
+                      key: const ValueKey('reading-emphasis-preview-current'),
+                      style: baseStyle.copyWith(
+                        color: currentColor,
+                        fontWeight: appearance.highlightCurrentChar
+                            ? (appearance.defaultBold
+                                  ? FontWeight.w900
+                                  : FontWeight.w700)
+                            : baseStyle.fontWeight,
+                        decoration: appearance.underlineCurrentChar
+                            ? TextDecoration.underline
+                            : TextDecoration.none,
+                        decorationColor: currentColor,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              Text(
+                '在读。这一段。',
+                key: const ValueKey('reading-emphasis-preview-current-rest'),
+                style: baseStyle.copyWith(color: currentColor),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
           Text(
-            '在朗读。',
+            '下一段未读。',
             key: const ValueKey('reading-emphasis-preview-unread'),
             style: baseStyle,
           ),

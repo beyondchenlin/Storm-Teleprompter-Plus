@@ -60,7 +60,7 @@ class AppSettings {
   /// 是否启用镜像翻转（用于提词器分光镜）
   final bool mirrorMode;
 
-  /// 是否处于全屏模式
+  /// 远程接收端的全屏启动偏好；本地提词始终以普通窗口进入。
   final bool fullScreenMode;
 
   /// 全屏时是否自动隐藏界面元素
@@ -87,10 +87,10 @@ class AppSettings {
   /// 阅读线位置偏移比例（0.0~1.0，默认 0.5 = 居中）
   final double readingLineOffset;
 
-  /// 是否高亮当前字
+  /// 是否加粗当前字
   final bool highlightCurrentChar;
 
-  /// 当前字变色和放大的总开关。已读标记仍由 grayReadChars 控制。
+  /// 整段变色与当前字放大的总开关；已读段标记由 grayReadChars 控制。
   final bool readingEmphasisEnabled;
   final int currentCharColor;
   final int readCharColor;
@@ -124,7 +124,7 @@ class AppSettings {
   /// 提词器正文字体（空字符串使用系统默认）
   final String teleprompterFontFamily;
 
-  /// 是否将已读字符变灰
+  /// 是否使用已读段落颜色
   final bool grayReadChars;
 
   /// 字体颜色（0 表示自动根据背景色选择黑白）
@@ -174,7 +174,7 @@ class AppSettings {
     this.autoScrollMode = AutoScrollMode.line,
     this.pixelsPerSecond = 20,
     this.mirrorMode = false,
-    this.fullScreenMode = true,
+    this.fullScreenMode = false,
     this.autoHideUI = true,
     this.autoHideDelaySeconds = 3,
     this.asrModelId = defaultAsrModelId,
@@ -239,7 +239,7 @@ class AppSettings {
       ),
       pixelsPerSecond: (json['pixelsPerSecond'] as num?)?.toDouble() ?? 20,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
-      fullScreenMode: json['fullScreenMode'] as bool? ?? true,
+      fullScreenMode: json['fullScreenMode'] as bool? ?? false,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
       autoHideDelaySeconds: json['autoHideDelaySeconds'] as int? ?? 3,
       asrModelId: modelId,

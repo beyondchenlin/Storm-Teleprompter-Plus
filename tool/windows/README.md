@@ -45,10 +45,10 @@ Microsoft Visual C++ Runtime（微软 C++ 运行库）从已安装的官方开�
 .\tool\windows\ensure_inno.ps1
 $modelRoot = Join-Path $env:TEMP 'BKTeleprompter-models'
 .\tool\windows\prepare_model.ps1 -OutputDirectory $modelRoot
-.\tool\windows\build_release.ps1 -Version 1.7.3 -BuildNumber 5
-.\tool\package_windows.ps1 -Version 1.7.3 -BuildNumber 5 `
+.\tool\windows\build_release.ps1 -Version 1.7.4 -BuildNumber 6
+.\tool\package_windows.ps1 -Version 1.7.4 -BuildNumber 6 `
   -ModelDirectory $modelRoot `
-  -OutputDirectory 'E:\Storm-Teleprompter-Plus\本地试用\交付\BK-1.7.3-20261107'
+  -OutputDirectory 'E:\Storm-Teleprompter-Plus\本地试用\交付\BK-1.7.4-20261107\packages'
 ```
 
 工具缺失时，将第一条命令改为：
@@ -65,9 +65,9 @@ $modelRoot = Join-Path $env:TEMP 'BKTeleprompter-models'
 
 生成三个正式产物：
 
-- `BK 提词器-1.7.3-windows-x64-setup.exe`：安装程序。
+- `BK 提词器-1.7.4-windows-x64-setup.exe`：安装程序。
 - 对应的 `.sha256`（内容校验文件）。
-- `BK 提词器-1.7.3-windows-x64-release.json`：来源提交、版本、编译器身份、模型来源和全部安装文件的校验清单。
+- `BK 提词器-1.7.4-windows-x64-release.json`：来源提交、版本、编译器身份、模型来源和全部安装文件的校验清单。
 
 安装器的实际数字签名状态会如实写入清单；产品作者元数据与受信任代码签名是不同字段。
 
@@ -76,14 +76,16 @@ $modelRoot = Join-Path $env:TEMP 'BKTeleprompter-models'
 先确认尚未安装本产品，且不存在同名桌面或开始菜单快捷方式。验证脚本发现这些对象会停止，不覆盖已有正式安装。
 
 ```powershell
-$delivery = 'E:\Storm-Teleprompter-Plus\本地试用\交付\BK-1.7.3-20261107'
+$delivery = 'E:\Storm-Teleprompter-Plus\本地试用\交付\BK-1.7.4-20261107\packages'
 .\tool\windows\verify_installer.ps1 `
-  -InstallerPath (Join-Path $delivery 'BK 提词器-1.7.3-windows-x64-setup.exe') `
-  -ReleaseManifestPath (Join-Path $delivery 'BK 提词器-1.7.3-windows-x64-release.json') `
+  -InstallerPath (Join-Path $delivery 'BK 提词器-1.7.4-windows-x64-setup.exe') `
+  -ReleaseManifestPath (Join-Path $delivery 'BK 提词器-1.7.4-windows-x64-release.json') `
   -TestRoot (Join-Path $delivery '安装验证')
 ```
 
 该验证必须从非管理员会话执行。它使用新的中文安装目录完成安装、快捷方式核对、逐文件校验、覆盖安装和卸载；第二次安装不指定目录，以检查是否沿用首次位置。它还检查微软运行库的架构与签名、非安装文件的保留，以及已有用户数据在全过程中保持不变。日志及验证报告保留在测试目录。
+
+若目标电脑已正式安装本产品，不得为绕过隔离脚本的保护而删除安装记录或用户文件。应先记录实际安装版本并备份当前用户数据，再正常覆盖升级，逐项核对稿件、设置、模型和安装清单；隔离安装/卸载与真实升级分别记录，不混称同一项验证。
 
 这项测试不启动应用。最终功能验收仍需从普通用户会话完成正式安装，打开程序，验证默认内置中文模型、中文路径、真实语音跟读及界面布局。旧版资料迁移必须单独备份验证。
 

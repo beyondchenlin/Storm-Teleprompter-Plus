@@ -103,6 +103,36 @@ class _Raster {
         ? null
         : Rect.fromLTRB(left.toDouble(), top.toDouble(), right + 1, bottom + 1);
   }
+
+  /// Paragraphs now share one colour. Compare same-colour baseline pixels to
+  /// isolate the enlarged glyph without clipping away an actual overflow.
+  Rect? differenceBounds(_Raster baseline) {
+    expect((width, height), (baseline.width, baseline.height));
+    var left = width;
+    var right = -1;
+    var top = height;
+    var bottom = -1;
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        final at = (y * width + x) * 4;
+        var different = false;
+        for (var channel = 0; channel < 4; channel++) {
+          if (bytes[at + channel] != baseline.bytes[at + channel]) {
+            different = true;
+            break;
+          }
+        }
+        if (!different) continue;
+        if (x < left) left = x;
+        if (x > right) right = x;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+    return right < 0
+        ? null
+        : Rect.fromLTRB(left.toDouble(), top.toDouble(), right + 1, bottom + 1);
+  }
 }
 
 Future<_Raster> _capture(WidgetTester tester, Finder line) async {
@@ -125,7 +155,7 @@ Future<_Raster> _capture(WidgetTester tester, Finder line) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('原位放大保持几何；实际像素只有一份当前字，已读恢复原尺寸', (tester) async {
+  testWidgets('整段同色且原位放大保持几何；当前字只有一份，段落读完恢复原尺寸', (tester) async {
     final key = GlobalKey<ReadingEmphasisLineState>();
     final cache = ReadingGlyphPainterCache();
     final line = TextParser.parse('甲乙丙').first;
@@ -144,13 +174,22 @@ void main() {
     ];
     final sizeBefore = tester.getSize(find.byKey(key));
     final initial = await _capture(tester, find.byKey(key));
-    final initialCurrent = initial.colorBounds(_currentColor)!;
-    expect(initial.colorBounds(_readColor, within: cells[0]), isNotNull);
-    expect(initial.colorBounds(_sourceColor, within: cells[2]), isNotNull);
+    final initialCurrent = initial.colorBounds(
+      _currentColor,
+      within: cells[1],
+    )!;
+    for (final cell in cells) {
+      expect(initial.colorBounds(_currentColor, within: cell), isNotNull);
+    }
+    expect(initial.colorBounds(_readColor), isNull);
+    expect(initial.colorBounds(_sourceColor), isNull);
 
     await show(_presentation(scale: 1.15));
     final enlarged = await _capture(tester, find.byKey(key));
-    final enlargedCurrent = enlarged.colorBounds(_currentColor)!;
+    final enlargedCurrent = enlarged.colorBounds(
+      _currentColor,
+      within: cells[1],
+    )!;
     expect(enlargedCurrent.width, greaterThan(initialCurrent.width));
     expect(enlargedCurrent.height, greaterThan(initialCurrent.height));
     expect(enlargedCurrent.center.dx, closeTo(initialCurrent.center.dx, 1));
@@ -171,10 +210,25 @@ void main() {
 
     await show(_presentation(index: 2, scale: 1.15));
     final advanced = await _capture(tester, find.byKey(key));
-    final previousGlyph = advanced.colorBounds(_readColor, within: cells[1])!;
+    final previousGlyph = advanced.colorBounds(
+      _currentColor,
+      within: cells[1],
+    )!;
     expect(previousGlyph.width, closeTo(initialCurrent.width, 1));
     expect(previousGlyph.height, closeTo(initialCurrent.height, 1));
     expect(advanced.colorBounds(_currentColor, within: cells[2]), isNotNull);
+    expect(advanced.colorBounds(_readColor), isNull);
+
+    await show(_presentation(index: 3, scale: 1.15));
+    final completed = await _capture(tester, find.byKey(key));
+    expect(completed.colorBounds(_currentColor), isNull);
+    for (final cell in cells) {
+      expect(completed.colorBounds(_readColor, within: cell), isNotNull);
+    }
+    expect(
+      completed.colorBounds(_readColor, within: cells[1])!.width,
+      closeTo(initialCurrent.width, 1),
+    );
 
     await show(_presentation(index: 1, enabled: false, scale: 1.15));
     final disabled = await _capture(tester, find.byKey(key));
@@ -183,14 +237,24 @@ void main() {
       disabled.colorBounds(_sourceColor, within: cells[1])!.width,
       closeTo(initialCurrent.width, 1),
     );
-    expect(disabled.colorBounds(_readColor, within: cells[0]), isNotNull);
+    expect(disabled.colorBounds(_readColor), isNull);
     expect(key.currentState!.debugLayout, same(layout));
 
     await show(_presentation(index: 1, grayReadChars: false));
     final readOff = await _capture(tester, find.byKey(key));
     expect(readOff.colorBounds(_readColor), isNull);
-    expect(readOff.colorBounds(_sourceColor, within: cells[0]), isNotNull);
+    expect(readOff.colorBounds(_currentColor, within: cells[0]), isNotNull);
     expect(readOff.colorBounds(_currentColor, within: cells[1]), isNotNull);
+    await show(_presentation(index: 3, grayReadChars: false));
+    final completedReadOff = await _capture(tester, find.byKey(key));
+    expect(completedReadOff.colorBounds(_readColor), isNull);
+    expect(completedReadOff.colorBounds(_currentColor), isNull);
+    for (final cell in cells) {
+      expect(
+        completedReadOff.colorBounds(_sourceColor, within: cell),
+        isNotNull,
+      );
+    }
     await tester.pumpWidget(const SizedBox());
     cache.dispose();
   });
@@ -423,13 +487,24 @@ void main() {
           cache: cache,
           geometry: geometry,
           width: 500,
+          presentation: _presentation(index: index, scale: 1, bold: true),
+        ),
+      );
+      final baselineRaster = await _capture(tester, find.byKey(key));
+      await tester.pumpWidget(
+        _lineHost(
+          key: key,
+          line: line,
+          cache: cache,
+          geometry: geometry,
+          width: 500,
           presentation: _presentation(index: index, scale: 1.15, bold: true),
         ),
       );
       final layout = key.currentState!.debugLayout;
       final cell = layout.placementForRawIndex(index)!.cell;
       final raster = await _capture(tester, find.byKey(key));
-      final ink = raster.colorBounds(_currentColor)!;
+      final ink = raster.differenceBounds(baselineRaster)!;
       final glyph = layout.graphemes[index];
       final appearance = _presentation(
         index: index,
@@ -545,12 +620,24 @@ void main() {
           cache: cache,
           geometry: geometry,
           width: 96,
+          presentation: _presentation(index: glyph.rawStart, scale: 1),
+          onTap: tapped.add,
+        ),
+      );
+      final baselineRaster = await _capture(tester, find.byKey(key));
+      await tester.pumpWidget(
+        _lineHost(
+          key: key,
+          line: line,
+          cache: cache,
+          geometry: geometry,
+          width: 96,
           presentation: _presentation(index: glyph.rawStart, scale: 1.15),
           onTap: tapped.add,
         ),
       );
       final raster = await _capture(tester, find.byKey(key));
-      final ink = raster.colorBounds(_currentColor)!;
+      final ink = raster.differenceBounds(baselineRaster)!;
       final cell = originalCells[index];
       expect(ink.left, greaterThanOrEqualTo(cell.left - 1));
       expect(ink.right, lessThanOrEqualTo(cell.right + 1));

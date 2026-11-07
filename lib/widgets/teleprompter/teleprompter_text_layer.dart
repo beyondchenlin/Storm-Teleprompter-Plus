@@ -160,6 +160,11 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   final ReadingGlyphPainterCache _glyphCache = ReadingGlyphPainterCache();
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
+  List<ScriptLine>? _intrinsicWidthLines;
+  ReadingTextGeometry? _intrinsicWidthGeometry;
+  TextDirection? _intrinsicWidthDirection;
+  double _contentIntrinsicWidth = 0;
+  int _intrinsicWidthBuildCount = 0;
   double _fontScale = 1;
   double? _lastFitScale;
   double _maximumRowHeight = 0;
@@ -176,6 +181,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   @visibleForTesting
   int get debugMetricsBuildCount => _metricsBuildCount;
+
+  @visibleForTesting
+  int get debugIntrinsicWidthBuildCount => _intrinsicWidthBuildCount;
 
   ReadingTextGeometry get _textGeometry => ReadingTextGeometry(
     fontSize: widget.fontSize,
@@ -268,7 +276,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     }
   }
 
-  double _horizontalPadding(double viewportWidth) {
+  double _minimumHorizontalPadding(double viewportWidth) {
     final isMobile = viewportWidth < LayoutConstants.compactBreakpoint;
     final basePadding = isMobile
         ? TeleprompterConstants.mobileHorizontalPadding
@@ -284,11 +292,58 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         .toDouble();
   }
 
-  double _textWidthForViewport(double viewportWidth) {
-    final horizontalPadding = _horizontalPadding(viewportWidth);
+  double _maximumTextWidthForViewport(double viewportWidth) {
+    final horizontalPadding = _minimumHorizontalPadding(viewportWidth);
     return (viewportWidth - horizontalPadding * 2)
         .clamp(0.0, viewportWidth)
         .toDouble();
+  }
+
+  double _textWidthForViewport(double viewportWidth) {
+    final maximum = _maximumTextWidthForViewport(viewportWidth);
+    if (_contentIntrinsicWidth <= 0) return maximum;
+    // A small rounding allowance prevents a native paragraph from wrapping
+    // its last glyph at its own fractional intrinsic width. The side guide
+    // supplies the remaining breathing room outside the text column.
+    return math.min(maximum, _contentIntrinsicWidth.ceilToDouble() + 2);
+  }
+
+  double _horizontalPadding(double viewportWidth) =>
+      math.max(0.0, (viewportWidth - _textWidthForViewport(viewportWidth)) / 2);
+
+  /// Share one content-derived column across the entire manuscript. A manual
+  /// line is measured without wrapping, not joined with the other manual
+  /// lines in its paragraph. Current glyph, reading colour and microphone
+  /// events never invalidate this cache; ordinary window-width changes only
+  /// clamp its result and do not remeasure the unwrapped manuscript.
+  void _ensureIntrinsicWidth(TextDirection textDirection) {
+    final geometry = _textGeometry;
+    if (identical(_intrinsicWidthLines, widget.lines) &&
+        _intrinsicWidthGeometry == geometry &&
+        _intrinsicWidthDirection == textDirection) {
+      return;
+    }
+
+    var widest = 0.0;
+    for (final line in widget.lines) {
+      if (line.characters.isEmpty || line.text.trim().isEmpty) continue;
+      final layout = ReadingTextLayout(
+        line: line,
+        geometry: geometry,
+        width: double.infinity,
+        direction: textDirection,
+      );
+      // Reuse precisely the mixed-style, italic-safe and maximum-emphasis
+      // cells that are used for painting and hit testing, not character count
+      // times nominal font size. Each temporary native layout is released.
+      widest = math.max(widest, layout.maxIntrinsicWidth);
+      layout.dispose();
+    }
+    _contentIntrinsicWidth = widest;
+    _intrinsicWidthLines = widget.lines;
+    _intrinsicWidthGeometry = geometry;
+    _intrinsicWidthDirection = textDirection;
+    _intrinsicWidthBuildCount++;
   }
 
   double _effectiveReadingLineRatio(double viewportWidth) {
@@ -855,8 +910,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         final viewportHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : screenHeight;
-        final horizontalPadding = _horizontalPadding(viewportWidth);
-        final textWidth = _textWidthForViewport(viewportWidth);
+        final maximumTextWidth = _maximumTextWidthForViewport(viewportWidth);
+        final textDirection = Directionality.of(context);
         final size = Size(viewportWidth, viewportHeight);
         final viewportChanged =
             size != _lastViewportSize ||
@@ -864,7 +919,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         final anchor = widget.continuous && viewportChanged && !_metricsDirty
             ? _captureViewportAnchor()
             : null;
-        final nextScale = _fitFontScale(textWidth, viewportHeight);
+        // Fit only against the actual window limit, never the content-derived
+        // column: a short line must not shrink its own saved font size.
+        final nextScale = _fitFontScale(maximumTextWidth, viewportHeight);
         if (_lastFitScale != nextScale ||
             size != _lastViewportSize ||
             _metricsDirty) {
@@ -874,15 +931,20 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
           }
           _lastFitScale = nextScale;
         }
-        _ensureLineMetrics(textWidth, Directionality.of(context));
+        _ensureIntrinsicWidth(textDirection);
+        var textWidth = _textWidthForViewport(viewportWidth);
+        _ensureLineMetrics(textWidth, textDirection);
         // Include real fallback-font metrics, not just a nominal font-size
         // estimate, when a very short window cannot contain one expanded row.
         final availableRowHeight = math.max(1.0, viewportHeight - 8);
         if (_maximumRowHeight > availableRowHeight) {
           _fontScale *= availableRowHeight / _maximumRowHeight * 0.98;
           _metricsDirty = true;
-          _ensureLineMetrics(textWidth, Directionality.of(context));
+          _ensureIntrinsicWidth(textDirection);
+          textWidth = _textWidthForViewport(viewportWidth);
+          _ensureLineMetrics(textWidth, textDirection);
         }
+        final horizontalPadding = _horizontalPadding(viewportWidth);
         _lastViewportSize = size;
         _lastRequestedReadingLineY = widget.readingLineY;
         _lastReadingLineY = _readingLineY(viewportHeight, viewportWidth);
