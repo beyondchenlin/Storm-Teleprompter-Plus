@@ -51,12 +51,16 @@ class ReadingTextGeometry {
   final String fontFamily;
   final bool defaultBold;
 
+  /// A viewport fit only; saved font sizes and cursor emphasis stay unchanged.
+  final double fontScale;
+
   const ReadingTextGeometry({
     required this.fontSize,
     required this.lineHeight,
     this.letterSpacing = 0,
     this.fontFamily = '',
     this.defaultBold = false,
+    this.fontScale = 1,
   });
 
   // Independent emphasis needs independent Latin character cells. Disable
@@ -74,7 +78,7 @@ class ReadingTextGeometry {
   FontWeight get boldWeight => defaultBold ? FontWeight.w900 : FontWeight.w700;
 
   double fontSizeFor(ScriptCharacter char) =>
-      char.fontSizePx ?? fontSize * (char.fontSizeRatio ?? 1.0);
+      (char.fontSizePx ?? fontSize * (char.fontSizeRatio ?? 1.0)) * fontScale;
 
   TextStyle styleFor(ScriptCharacter char, {bool reserve = false}) => TextStyle(
     fontSize: fontSizeFor(char) * (reserve ? readingEmphasisMaximumScale : 1),
@@ -89,14 +93,15 @@ class ReadingTextGeometry {
     // breathing room as well as the 115% advance; negative legacy spacing may
     // not consume that reserve. These settings never depend on the cursor.
     letterSpacing: reserve
-        ? math.max(0.0, letterSpacing) +
+        ? math.max(0.0, letterSpacing) * fontScale +
               fontSizeFor(char) *
                   readingEmphasisMaximumScale *
                   (char.italic ? 0.20 : 0.04)
         : 0,
   );
 
-  double get emptyHeight => fontSize * readingEmphasisMaximumScale * lineHeight;
+  double get emptyHeight =>
+      fontSize * fontScale * readingEmphasisMaximumScale * lineHeight;
 
   @override
   bool operator ==(Object other) =>
@@ -105,11 +110,18 @@ class ReadingTextGeometry {
       lineHeight == other.lineHeight &&
       letterSpacing == other.letterSpacing &&
       fontFamily == other.fontFamily &&
-      defaultBold == other.defaultBold;
+      defaultBold == other.defaultBold &&
+      fontScale == other.fontScale;
 
   @override
-  int get hashCode =>
-      Object.hash(fontSize, lineHeight, letterSpacing, fontFamily, defaultBold);
+  int get hashCode => Object.hash(
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    fontFamily,
+    defaultBold,
+    fontScale,
+  );
 }
 
 @immutable

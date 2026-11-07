@@ -298,21 +298,27 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Build Windows
+      - name: Build Windows installer
         shell: powershell
+        env:
+          PUB_HOSTED_URL: https://pub.flutter-io.cn
         run: |
-          $version = '${{ needs.release_metadata.outputs.app_version }}'
-          $buildName = $version.TrimStart('v')
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ needs.release_metadata.outputs.app_version }}'.TrimStart('v')
+          $modelRoot = Join-Path $env:RUNNER_TEMP 'bk-chinese-model'
+          $outputRoot = Join-Path $env:RUNNER_TEMP 'bk-windows-release'
           flutter config --enable-windows-desktop
-          flutter pub get
-          flutter build windows --release --build-name=$buildName --dart-define=APP_VERSION=$version
-          New-Item -ItemType Directory -Force artifacts | Out-Null
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "artifacts\${env:APP_NAME}-windows-x64.zip" -Force
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot enable Windows desktop builds.' }
+          & .\tool\windows\ensure_inno.ps1 -InstallIfMissing
+          & .\tool\windows\prepare_model.ps1 -OutputDirectory $modelRoot
+          & .\tool\windows\build_release.ps1 -Version $version
+          & .\tool\package_windows.ps1 -Version $version -ModelDirectory $modelRoot -OutputDirectory $outputRoot
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: artifacts/*
+          path: ${{ runner.temp }}/bk-windows-release/*
+          if-no-files-found: error
 
   apple:
     name: macOS and iOS

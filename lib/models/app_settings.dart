@@ -15,6 +15,8 @@ enum AppBrightnessMode { system, light, dark }
 ///
 /// 管理所有用户可配置的提词器参数。
 class AppSettings {
+  static const defaultAsrModelId = 'zipformer2-ced';
+  static const defaultAsrModelName = '中文语音模型（内置）';
   static const defaultCurrentCharColor = 0xFFFFD54F;
   static const defaultReadCharColor = 0xFF999999;
   static const minCurrentCharScale = 1.0;
@@ -175,8 +177,8 @@ class AppSettings {
     this.fullScreenMode = true,
     this.autoHideUI = true,
     this.autoHideDelaySeconds = 3,
-    this.asrModelId = '',
-    this.asrModelName = '',
+    this.asrModelId = defaultAsrModelId,
+    this.asrModelName = defaultAsrModelName,
     this.uiPrimaryColor = 0xFFDB9D16,
     this.teleprompterBgColor = 0xFF000000,
     this.paddingX = 5.0,
@@ -212,6 +214,14 @@ class AppSettings {
 
   /// 从 JSON 反序列化
   factory AppSettings.fromJson(Map<String, dynamic> json) {
+    final storedModelId = (json['asrModelId'] as String?)?.trim() ?? '';
+    final modelId = storedModelId.isEmpty ? defaultAsrModelId : storedModelId;
+    final storedModelName = (json['asrModelName'] as String?)?.trim() ?? '';
+    final modelName =
+        storedModelId.isEmpty ||
+            (modelId == defaultAsrModelId && storedModelName.isEmpty)
+        ? defaultAsrModelName
+        : storedModelName;
     return AppSettings(
       quickModeEnabled: json['quickModeEnabled'] as bool? ?? false,
       quickModeAutoSave: json['quickModeAutoSave'] as bool? ?? false,
@@ -232,8 +242,8 @@ class AppSettings {
       fullScreenMode: json['fullScreenMode'] as bool? ?? true,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
       autoHideDelaySeconds: json['autoHideDelaySeconds'] as int? ?? 3,
-      asrModelId: json['asrModelId'] as String? ?? '',
-      asrModelName: json['asrModelName'] as String? ?? '',
+      asrModelId: modelId,
+      asrModelName: modelName,
       uiPrimaryColor: json['uiPrimaryColor'] as int? ?? 0xFFDB9D16,
       teleprompterBgColor: json['teleprompterBgColor'] as int? ?? 0xFF000000,
       paddingX: (json['paddingX'] as num?)?.toDouble() ?? 5.0,

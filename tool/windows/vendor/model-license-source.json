@@ -1,0 +1,18 @@
+{
+    "verifiedUtc":  "2026-11-07T03:03:04.7142342Z",
+    "upstream":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+    "mirrorRevision":  "cfe8339af4318acf5354ad52344a4ac49ad385db",
+    "modelCard":  {
+                      "url":  "https://modelscope.cn/api/v1/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/repo?Revision=cfe8339af4318acf5354ad52344a4ac49ad385db\u0026FilePath=README.md",
+                      "bytes":  226,
+                      "sha256":  "515751f07faad368f0863ae41773ff09635eba5920122d549abb8e45d5c88282",
+                      "localFile":  "ChineseModel-README.md"
+                  },
+    "license":  {
+                    "url":  "https://www.apache.org/licenses/LICENSE-2.0.txt",
+                    "bytes":  11358,
+                    "sha256":  "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                    "localFile":  "Apache-2.0.txt"
+                },
+    "separateLicenseOrNoticeInModelRepository":  false
+}

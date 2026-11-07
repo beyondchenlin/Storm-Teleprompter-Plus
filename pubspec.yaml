@@ -1,7 +1,7 @@
 name: storm_teleprompter_plus
 description: "BK 提词器 - 智能提词器应用"
 publish_to: 'none'
-version: 1.7.2+4
+version: 1.7.3+5
 
 environment:
   sdk: ^3.12.1
@@ -25,6 +25,9 @@ dependencies:
 
   # HTTP 下载（ASR 模型下载）
   http: ^1.2.2
+
+  # 验证模型内容，保持既有锁定版本
+  crypto: 3.0.7
 
   # 解压模型文件
   archive: ^4.0.2
@@ -85,6 +88,7 @@ flutter:
   assets:
     - LICENSE
     - lib/favicon.png
+    - assets/asr/zipformer2-ced.manifest.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,162 +1,180 @@
 ﻿param(
-  [Parameter(Mandatory = $true)]
-  [ValidatePattern('^\d+\.\d+\.\d+$')]
-  [string]$Version,
+  [string]$Version = '',
+  [ValidateRange(-1, 65535)]
+  [int]$BuildNumber = -1,
 
   [Parameter(Mandatory = $true)]
   [string]$OutputDirectory,
 
-  # Optional directory containing the zipformer2-ced model folder.
-  [string]$ModelDirectory = ''
+  # Parent directory containing the verified zipformer2-ced model folder.
+  [Parameter(Mandatory = $true)]
+  [string]$ModelDirectory,
+
+  [string]$CompilerPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows\common.ps1')
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$sourceCommit = Assert-BKCleanSource -ProjectRoot $projectRoot
+$release = Resolve-BKVersion -ProjectRoot $projectRoot -Version $Version -BuildNumber $BuildNumber
 $buildDirectory = Join-Path $projectRoot 'build\windows\x64\runner\Release'
 $executable = Join-Path $buildDirectory 'BK 提词器.exe'
-if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-  throw 'Build BK 提词器 for Windows in release mode before packaging.'
+Assert-BKExecutableBranding -Path $executable -Release $release
+
+$receiptPath = Join-Path $buildDirectory 'bk-build-receipt.json'
+if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+  throw 'A verified build receipt is required. Build with tool/windows/build_release.ps1 first.'
 }
-$metadata = (Get-Item -LiteralPath $executable).VersionInfo
-if ($metadata.ProductName -cne 'BK 提词器' -or
-    $metadata.FileDescription -cne 'BK 提词器' -or
-    $metadata.OriginalFilename -cne 'BK 提词器.exe' -or
-    $metadata.InternalName -cne 'BK 提词器' -or
-    $metadata.CompanyName -cne '陈林' -or
-    $metadata.LegalCopyright -cne 'Copyright (C) 2026 陈林. MIT License.' -or
-    $metadata.Comments -cne '创作者：陈林；联系邮箱：beyond.chenlin@gmail.com') {
-  throw 'Executable branding is incomplete.'
+$receipt = [IO.File]::ReadAllText($receiptPath) | ConvertFrom-Json
+if ($receipt.schemaVersion -ne 1 -or $receipt.sourceCommit -cne $sourceCommit -or
+    $receipt.productVersion -cne $release.productVersion) {
+  throw 'The build receipt does not match this source commit and version; rebuild first.'
 }
-if ($metadata.ProductVersion -notmatch ('^' + [regex]::Escape($Version) + '(?:\+|\s|$)')) {
-  throw "Executable version does not match $Version."
+$runtimeFiles = @(Get-BKFileManifest -Directory $buildDirectory -RuntimeOnly)
+Assert-BKFileManifest -Actual $runtimeFiles -Expected @($receipt.files)
+foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+  $path = Join-Path $buildDirectory $name
+  Assert-BKOfficialSignature -Path $path -Publisher 'Microsoft Corporation'
+  Assert-BKPeX64 -Path $path
 }
-$bundledIcon = Join-Path $buildDirectory 'data\flutter_assets\lib\favicon.png'
-if ((Get-FileHash -LiteralPath $bundledIcon).Hash -ne
-    (Get-FileHash -LiteralPath (Join-Path $projectRoot 'lib\favicon.png')).Hash) {
-  throw 'Bundled icon does not match the source artwork; rebuild first.'
+
+foreach ($relative in @('lib\favicon.png', 'assets\asr\zipformer2-ced.manifest.json')) {
+  $source = Join-Path $projectRoot $relative
+  $bundled = Join-Path $buildDirectory (Join-Path 'data\flutter_assets' $relative)
+  if ((Get-FileHash -LiteralPath $source).Hash -cne (Get-FileHash -LiteralPath $bundled).Hash) {
+    throw "Bundled asset differs from the source: $relative"
+  }
 }
+$model = Read-BKModelManifest -ProjectRoot $projectRoot
+$modelSource = Join-Path ([IO.Path]::GetFullPath($ModelDirectory)) $model.modelId
+foreach ($entry in $model.files) { Assert-BKModelFile -Path (Join-Path $modelSource $entry.name) -Entry $entry }
+$compiler = Find-BKInnoCompiler -ExplicitPath $CompilerPath
+if ($null -eq $compiler) { throw 'An official Inno Setup compiler is required. Run tool/windows/ensure_inno.ps1 first.' }
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
+$packageName = "BK 提词器-$($release.version)-windows-x64"
+$installerName = "$packageName-setup.exe"
+$releaseManifestName = "$packageName-release.json"
+$installer = Join-Path $outputRoot $installerName
+$checksumFile = "$installer.sha256"
+$releaseManifestPath = Join-Path $outputRoot $releaseManifestName
+foreach ($path in @($installer, $checksumFile, $releaseManifestPath)) {
+  if (Test-Path -LiteralPath $path) { throw 'The requested release already exists; choose a new output directory.' }
+}
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
-$packageName = "BK 提词器-$Version-windows-x64"
-$packageDirectory = Join-Path $outputRoot $packageName
-$archive = Join-Path $outputRoot "$packageName.zip"
-$checksumFile = "$archive.sha256"
-if ((Test-Path -LiteralPath $packageDirectory) -or (Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $checksumFile)) {
-  throw 'The requested package already exists; choose a new output directory.'
-}
-$sourceChanges = @(git -C $projectRoot status --porcelain=v1 --untracked-files=all)
-if ($LASTEXITCODE -ne 0 -or $sourceChanges.Count -gt 0) {
-  throw 'Commit and verify the complete source tree before packaging.'
-}
-$workRoot = Join-Path $outputRoot ('.' + $packageName + '-' + [guid]::NewGuid().ToString('N'))
-$stage = Join-Path $workRoot $packageName
-$temporaryArchive = Join-Path $workRoot "$packageName.zip"
-$temporaryChecksum = "$temporaryArchive.sha256"
-$publishedPaths = [Collections.Generic.List[string]]::new()
+$workRoot = Join-Path $outputRoot ('.installer-' + [guid]::NewGuid().ToString('N'))
+$stage = Join-Path $workRoot 'payload'
+$compileOutput = Join-Path $workRoot 'output'
 [IO.Directory]::CreateDirectory($stage) | Out-Null
+[IO.Directory]::CreateDirectory($compileOutput) | Out-Null
+$publishedPaths = [Collections.Generic.List[string]]::new()
 try {
-  # Explicit allowlist: never package a stale executable, app_data, or build logs.
-  Copy-Item -LiteralPath $executable -Destination (Join-Path $stage 'BK 提词器.exe')
-  Get-ChildItem -LiteralPath $buildDirectory -File -Filter '*.dll' |
-    Copy-Item -Destination $stage
-  Copy-Item -LiteralPath (Join-Path $buildDirectory 'data') -Destination $stage -Recurse
+  # Copy only the exact files recorded by the clean build, never a user's app_data.
+  foreach ($entry in $runtimeFiles) {
+    $source = Join-Path $buildDirectory $entry.path
+    $destination = Join-Path $stage $entry.path
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination
+  }
   Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $stage
-
-  $modelFiles = @()
-  if (-not [string]::IsNullOrWhiteSpace($ModelDirectory)) {
-    $modelSource = Join-Path $ModelDirectory 'zipformer2-ced'
-    $modelDestination = Join-Path $stage 'app_data\asr_models\zipformer2-ced'
-    [IO.Directory]::CreateDirectory($modelDestination) | Out-Null
-    $modelFiles = @(
-      'decoder-epoch-99-avg-1.onnx',
-      'encoder-epoch-99-avg-1.onnx',
-      'joiner-epoch-99-avg-1.onnx',
-      'tokens.txt'
-    )
-    foreach ($name in $modelFiles) {
-      $source = Join-Path $modelSource $name
-      if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
-          (Get-Item -LiteralPath $source).Length -eq 0) {
-        throw "Required model file is missing or empty: $source"
-      }
-      $destination = Join-Path $modelDestination $name
-      Copy-Item -LiteralPath $source -Destination $destination
-      if ((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $destination).Hash) {
-        throw "Model copy verification failed: $name"
-      }
-    }
+  Copy-Item -LiteralPath $receiptPath -Destination $stage
+  $notices = Join-Path $stage 'third_party'
+  [IO.Directory]::CreateDirectory($notices) | Out-Null
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows\THIRD_PARTY_NOTICES.txt') -Destination $notices
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows\vendor\InnoSetup-LICENSE.txt') -Destination $notices
+  foreach ($name in @('Apache-2.0.txt', 'ChineseModel-README.md', 'ChineseModel-SOURCE.txt', 'model-license-source.json')) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('windows\vendor\' + $name)) -Destination $notices
   }
-
-  $modelNote = if ($modelFiles.Count -gt 0) {
-    '本包包含中文语音模型，可在语音设置中选择中文模型。'
-  } else {
-    '语音跟读前，请在语音设置中下载或导入模型。'
+  $modelDestination = Join-Path $stage ('bundled_models\' + $model.modelId)
+  [IO.Directory]::CreateDirectory($modelDestination) | Out-Null
+  foreach ($entry in $model.files) {
+    $destination = Join-Path $modelDestination $entry.name
+    Copy-Item -LiteralPath (Join-Path $modelSource $entry.name) -Destination $destination
+    Assert-BKModelFile -Path $destination -Entry $entry
   }
+  $modelManifestPath = Join-Path $projectRoot 'assets\asr\zipformer2-ced.manifest.json'
+  Copy-Item -LiteralPath $modelManifestPath -Destination (Join-Path $modelDestination 'model-manifest.json')
+  [IO.File]::WriteAllText((Join-Path $stage 'bk-installed.json'), '{"schemaVersion":1,"mode":"installed"}', [Text.UTF8Encoding]::new($false))
   $instructions = @"
-BK 提词器（智能提词器）$Version
+BK 提词器 $($release.version)
 
 创作者：陈林
 联系邮箱：beyond.chenlin@gmail.com
 本产品定制部分版权：Copyright (c) 2026 陈林
 
-1. 将整个压缩包解压到有写入权限的文件夹，再打开 BK 提词器.exe（启动程序）。
-2. 请保留同目录的动态库和 data（程序资源）文件夹，不要只移动启动程序。
-3. $modelNote
-4. 稿件、设置和模型保存在 app_data（应用数据）文件夹。升级前先关闭软件并备份该文件夹，解压新版后再复制到新目录。
-5. 本分发包不含个人稿件、设置或运行日志。
-6. 阅读提示：提词画面齿轮中可调整当前字颜色及 0%～15% 放大；设置会自动保存。
+1. 支持微软系统 10 的 1903 版及以上，以及微软系统 11 的 64 位环境。
+2. 双击安装程序，为当前用户安装，无需管理员权限。通过桌面或开始菜单中的“BK 提词器”打开软件。
+3. 安装包已包含“中文语音模型（内置）”。首次使用时，软件会校验并自动准备模型；模型损坏时可从语音设置修复。
+4. 默认程序目录：%LOCALAPPDATA%\Programs\BKTeleprompter。
+5. 稿件、设置和用户模型保存在：%LOCALAPPDATA%\BKTeleprompter\app_data。请在文件管理器地址栏输入此路径查看。
+6. 升级前保存稿件并退出软件，然后运行新版安装程序。升级会沿用安装位置并保留用户数据。
+7. 在系统“应用和功能”中卸载，或从开始菜单运行卸载程序。卸载会保留稿件、设置及用户模型；本安装器不会清除它们。
+8. 旧便携版的 app_data（应用数据）仍保留在原位置。不要将安装目录选为旧版数据目录，也不要直接删除旧目录；按产品迁移说明备份后迁移。
 
-开源许可证、上游作者署名和本产品定制部分署名见 LICENSE（许可证）文件。
+本分发包不含个人稿件、设置或运行日志。
+开源许可证、上游作者署名和本产品定制部分署名见 LICENSE（许可证）；第三方组件说明见 third_party（第三方说明）目录。
 "@
   [IO.File]::WriteAllText((Join-Path $stage '使用说明.txt'), $instructions, [Text.UTF8Encoding]::new($true))
-  $manifest = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Sort-Object FullName | ForEach-Object {
-    [pscustomobject]@{
-      path = $_.FullName.Substring($stage.Length + 1).Replace('\', '/')
-      bytes = $_.Length
-      sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    }
-  })
-  $sourceCommit = (git -C $projectRoot rev-parse HEAD).Trim()
-  if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the source commit.' }
-  $summary = [pscustomobject]@{
+  $payloadManifest = [ordered]@{
+    schemaVersion = 1
     product = 'BK 提词器'
     creator = '陈林'
     contactEmail = 'beyond.chenlin@gmail.com'
-    version = $Version
+    version = $release.version
+    buildNumber = $release.buildNumber
     sourceCommit = $sourceCommit
-    modelIncluded = $modelFiles.Count -gt 0
-    files = $manifest
+    modelId = $model.modelId
+    modelManifestSha256 = (Get-FileHash -LiteralPath $modelManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    files = @(Get-BKFileManifest -Directory $stage)
   }
-  [IO.File]::WriteAllText((Join-Path $stage 'BK 提词器-manifest.json'), ($summary | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
-  Compress-Archive -LiteralPath $stage -DestinationPath $temporaryArchive -CompressionLevel Optimal
-  $archiveHash = (Get-FileHash -LiteralPath $temporaryArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-  [IO.File]::WriteAllText($temporaryChecksum, "$archiveHash  $packageName.zip`n", [Text.UTF8Encoding]::new($false))
-  # Publish only completed artifacts. These APIs refuse to overwrite another run.
-  [IO.Directory]::Move($stage, $packageDirectory)
-  $publishedPaths.Add($packageDirectory)
-  [IO.File]::Move($temporaryArchive, $archive)
-  $publishedPaths.Add($archive)
-  [IO.File]::Move($temporaryChecksum, $checksumFile)
-  $publishedPaths.Add($checksumFile)
-  [pscustomobject]@{
+  Write-BKJson -Path (Join-Path $stage 'BK 提词器-manifest.json') -Value $payloadManifest
+  $allPayloadFiles = @(Get-BKFileManifest -Directory $stage)
+  $compilerArguments = @(
+    '/Qp', "/DPayloadDir=$stage", "/DProjectRoot=$projectRoot",
+    "/DReleaseVersion=$($release.version)", "/DReleaseBuildNumber=$($release.buildNumber)",
+    "/DOutputDirectory=$compileOutput", "/DOutputFilename=$packageName-setup",
+    (Join-Path $PSScriptRoot 'windows\installer.iss')
+  )
+  & $compiler.path @compilerArguments
+  if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed: $LASTEXITCODE" }
+  $temporaryInstaller = Join-Path $compileOutput $installerName
+  $installerMetadata = (Get-Item -LiteralPath $temporaryInstaller).VersionInfo
+  if ($installerMetadata.ProductName -cne 'BK 提词器' -or $installerMetadata.CompanyName -cne '陈林' -or
+      $installerMetadata.ProductVersion -cne $release.productVersion) {
+    throw 'The compiled installer has incorrect product metadata.'
+  }
+  if ((Assert-BKCleanSource -ProjectRoot $projectRoot) -cne $sourceCommit) { throw 'The source changed while the installer was being created.' }
+  $installerHash = (Get-FileHash -LiteralPath $temporaryInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+  $installerSignature = Get-AuthenticodeSignature -LiteralPath $temporaryInstaller
+  $releaseManifest = [ordered]@{
+    schemaVersion = 1
     product = 'BK 提词器'
-    version = $Version
-    archive = $archive
-    archiveBytes = (Get-Item -LiteralPath $archive).Length
-    sha256 = $archiveHash
-    fileCount = $manifest.Count + 1
-    modelIncluded = $modelFiles.Count -gt 0
-  } | ConvertTo-Json
-} catch {
-  foreach ($createdPath in $publishedPaths) {
-    if (Test-Path -LiteralPath $createdPath) {
-      Remove-Item -LiteralPath $createdPath -Recurse -Force
-    }
+    creator = '陈林'
+    contactEmail = 'beyond.chenlin@gmail.com'
+    distribution = 'windows-x64-installer'
+    version = $release.version
+    buildNumber = $release.buildNumber
+    sourceCommit = $sourceCommit
+    createdUtc = [DateTime]::UtcNow.ToString('o')
+    installer = [ordered]@{file=$installerName; bytes=(Get-Item -LiteralPath $temporaryInstaller).Length; sha256=$installerHash; authenticodeStatus=$installerSignature.Status.ToString()}
+    installation = [ordered]@{appId='BeyondChenlin.BKTeleprompter'; scope='current-user'; minimumWindowsVersion='10.0.18362'; defaultDirectory='%LOCALAPPDATA%\Programs\BKTeleprompter'; userDataDirectory='%LOCALAPPDATA%\BKTeleprompter\app_data'; preservesUserDataOnUninstall=$true}
+    compiler = [ordered]@{name=$compiler.name; publisher=$compiler.publisher; compilerSha256=$compiler.compilerSha256; engineSha256=$compiler.engineSha256}
+    model = $model
+    files = $allPayloadFiles
   }
+  $temporaryManifest = Join-Path $compileOutput $releaseManifestName
+  Write-BKJson -Path $temporaryManifest -Value $releaseManifest
+  $temporaryChecksum = "$temporaryInstaller.sha256"
+  [IO.File]::WriteAllText($temporaryChecksum, "$installerHash  $installerName`n", [Text.UTF8Encoding]::new($false))
+  foreach ($pair in @(@($temporaryInstaller, $installer), @($temporaryChecksum, $checksumFile), @($temporaryManifest, $releaseManifestPath))) {
+    [IO.File]::Move($pair[0], $pair[1])
+    $publishedPaths.Add($pair[1])
+  }
+  [pscustomobject]@{product='BK 提词器'; version=$release.productVersion; sourceCommit=$sourceCommit; installer=$installer; sha256=$installerHash; manifest=$releaseManifestPath; fileCount=$allPayloadFiles.Count; modelIncluded=$true} | ConvertTo-Json
+} catch {
+  foreach ($path in $publishedPaths) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
   throw
 } finally {
-  if (Test-Path -LiteralPath $workRoot) {
-    Remove-Item -LiteralPath $workRoot -Recurse -Force
-  }
+  if (Test-Path -LiteralPath $workRoot) { Remove-Item -LiteralPath $workRoot -Recurse -Force }
 }

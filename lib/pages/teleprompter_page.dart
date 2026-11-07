@@ -18,6 +18,7 @@ import '../theme/app_theme.dart';
 import '../services/asr_service.dart';
 import '../utils/constants.dart';
 import '../widgets/teleprompter/teleprompter_text_layer.dart';
+import '../widgets/teleprompter/teleprompter_viewport.dart';
 import '../widgets/teleprompter/auto_speed_picker.dart';
 import '../widgets/teleprompter/prompt_entrance.dart';
 import '../widgets/teleprompter/teleprompter_settings_panel.dart';
@@ -176,57 +177,13 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                           teleprompter.showControls(settings);
                         }
                       },
-                      child: Stack(
-                        children: [
-                          // ── 1. 文本层（占据全屏，可滚动） ──
-                          _buildTextLayer(context, teleprompter, settings),
-
-                          // ── 2. 阅读线指示器 ──
-                          if (!settings.isContinuousScroll)
-                            _buildReadingLine(context, settings),
-
-                          // ── 3. 顶部进度条（全幅 + 右侧信息） ──
-                          if (teleprompter.isPlaying ||
-                              (settings.scrollMode == ScrollMode.auto &&
-                                  teleprompter.state ==
-                                      TeleprompterState.paused))
-                            _buildTopProgressBar(
-                              context,
-                              teleprompter,
-                              settings,
-                            ),
-
-                          // ── 4. 顶部导航栏（浮动、可隐藏） ──
-                          if (teleprompter.controlsVisible)
-                            _buildTopNavBar(context, teleprompter, settings),
-
-                          // ── 5. 底部浮动工具栏（可隐藏） ──
-                          if (teleprompter.controlsVisible)
-                            _buildBottomToolbar(
-                              context,
-                              teleprompter,
-                              settingsProvider,
-                              isRemoteClient: isRemoteControlLocked,
-                            ),
-
-                          if (settings.scrollMode == ScrollMode.asr &&
-                              teleprompter.controlsVisible)
-                            _buildAsrTranscriptOverlay(teleprompter, settings),
-
-                          // ── 7. 设置抽屉面板 ──
-                          if (_showSettings)
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: TeleprompterSettingsPanel(
-                                onClose: _closeSettingsPanel,
-                              ),
-                            ),
-
-                          if (remoteConnectionLost)
-                            _buildRemoteReconnectOverlay(context, connection),
-                        ],
+                      child: _buildResponsiveStage(
+                        context,
+                        teleprompter,
+                        settingsProvider,
+                        connection,
+                        remoteConnectionLost: remoteConnectionLost,
+                        isRemoteClient: isRemoteControlLocked,
                       ),
                     ),
                   ),
@@ -236,6 +193,86 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildResponsiveStage(
+    BuildContext context,
+    TeleprompterProvider teleprompter,
+    SettingsProvider settingsProvider,
+    ConnectionProvider connection, {
+    required bool remoteConnectionLost,
+    required bool isRemoteClient,
+  }) {
+    final settings = settingsProvider.mergedSettings;
+    final showProgress =
+        teleprompter.isPlaying ||
+        (settings.scrollMode == ScrollMode.auto &&
+            teleprompter.state == TeleprompterState.paused);
+    // Model preparation must remain visible and cancellable even after the
+    // normal auto-hide timer expires. The timer's state resumes afterwards.
+    final showControls =
+        teleprompter.controlsVisible ||
+        (settings.scrollMode == ScrollMode.asr && teleprompter.isAsrLoading);
+    final hasHeader = showProgress || showControls;
+    final hasFooter = showControls || remoteConnectionLost;
+    return SafeArea(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          TeleprompterViewport(
+            headerHeight:
+                (showProgress ? _progressBarHeight(settings) : 0) +
+                (showControls ? 48 : 0),
+            header: hasHeader
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showProgress)
+                        _buildTopProgressBar(context, teleprompter, settings),
+                      if (showControls)
+                        _buildTopNavBar(context, teleprompter, settings),
+                    ],
+                  )
+                : null,
+            footer: hasFooter
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (remoteConnectionLost)
+                        _buildRemoteReconnectOverlay(context, connection),
+                      if (showControls && settings.scrollMode == ScrollMode.asr)
+                        _buildAsrTranscriptOverlay(teleprompter, settings),
+                      if (showControls)
+                        _buildBottomToolbar(
+                          context,
+                          teleprompter,
+                          settingsProvider,
+                          isRemoteClient: isRemoteClient,
+                        ),
+                    ],
+                  )
+                : null,
+            readingLineOffset: settings.readingLineOffset,
+            showReadingLabel: !settings.isContinuousScroll,
+            mirrorMode: settings.mirrorMode,
+            readingColor: _readingLineGold,
+            builder: (context, readingLineY) => _buildTextLayer(
+              context,
+              teleprompter,
+              settings,
+              readingLineY: readingLineY,
+            ),
+          ),
+          if (_showSettings)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              child: TeleprompterSettingsPanel(onClose: _closeSettingsPanel),
+            ),
+        ],
+      ),
     );
   }
 
@@ -470,30 +507,25 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       ],
     ];
 
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: GestureDetector(
-        onTap: () {}, // 拦截点击，不触发父级
-        child: _mirrorPromptOverlayIfNeeded(
-          settings: settings,
-          child: SizedBox(
-            height: barHeight,
-            child: Stack(
-              children: [
-                // 进度条背景
-                Positioned.fill(
-                  child: Container(
-                    color: AppColors.background.withValues(alpha: 0.6),
-                  ),
+    return GestureDetector(
+      onTap: () {}, // 拦截点击，不触发父级
+      child: _mirrorPromptOverlayIfNeeded(
+        settings: settings,
+        child: SizedBox(
+          height: barHeight,
+          child: Stack(
+            children: [
+              // 进度条背景
+              Positioned.fill(
+                child: Container(
+                  color: AppColors.background.withValues(alpha: 0.6),
                 ),
-                // 进度条填充
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  bottom: 0,
-                  width: MediaQuery.of(context).size.width * progress,
+              ),
+              // 进度条填充
+              Positioned.fill(
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: progress.clamp(0.0, 1.0),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -505,26 +537,26 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                     ),
                   ),
                 ),
-                // 右侧信息（自动根据文本宽度调整）
-                Positioned(
-                  top: 0,
-                  left: 8,
-                  right: 8,
-                  bottom: 0,
-                  child: Align(
+              ),
+              // 右侧信息（自动根据文本宽度调整）
+              Positioned(
+                top: 0,
+                left: 8,
+                right: 8,
+                bottom: 0,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: infoChildren,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: infoChildren,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -537,7 +569,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   double _progressBarHeight(AppSettings settings) {
     final infoFontSize = settings.fontSize * settings.progressInfoSizeRatio;
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
-    return (clampedFontSize + 12).clamp(32.0, 60.0);
+    final scaledSize = MediaQuery.textScalerOf(context).scale(clampedFontSize);
+    return (scaledSize * 1.25 + 12).clamp(32.0, 132.0);
   }
 
   Widget _buildTopNavBar(
@@ -545,12 +578,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     TeleprompterProvider teleprompter,
     AppSettings settings,
   ) {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      top: _progressBarHeight(settings) + 4, // 进度条下方
-      left: 0,
-      right: 0,
+    return SizedBox(
+      height: 48,
       child: GestureDetector(
         onTap: () {}, // 拦截点击
         child: Container(
@@ -628,10 +657,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     BuildContext context,
     ConnectionProvider connection,
   ) {
-    return Positioned(
-      left: 20,
-      right: 20,
-      bottom: MediaQuery.of(context).padding.bottom + 96,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       child: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -724,92 +751,91 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     required bool isRemoteClient,
   }) {
     final settings = settingsProvider.mergedSettings;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final isCompact = screenWidth < LayoutConstants.compactBreakpoint;
-    final horizontalInset = isCompact ? 8.0 : 32.0;
-
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      bottom: MediaQuery.of(context).padding.bottom + (isCompact ? 8 : 16),
-      left: horizontalInset,
-      right: horizontalInset,
+    final isCompact =
+        MediaQuery.sizeOf(context).width < LayoutConstants.compactBreakpoint;
+    final settingsButton = IconButton(
+      icon: const Icon(
+        Icons.settings,
+        color: AppColors.textSecondary,
+        size: 22,
+      ),
+      onPressed: _openSettingsPanel,
+      tooltip: '设置',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    );
+    final playback = _buildCompactPlaybackControls(teleprompter, settings);
+    final status = settings.scrollMode != ScrollMode.asr
+        ? _buildSpeedDisplay(
+            settings,
+            settingsProvider,
+            readOnly: isRemoteClient,
+          )
+        : _buildRmsMeter(teleprompter, settings, compact: isCompact);
+    final secondary = <Widget>[
+      if (!isRemoteClient) _buildModeSelector(settings, settingsProvider),
+      status,
+    ];
+    final primary = <Widget>[if (!isRemoteClient) playback, settingsButton];
+    return Padding(
+      key: const ValueKey('teleprompter-toolbar'),
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 8 : 32,
+        4,
+        isCompact ? 8 : 32,
+        isCompact ? 8 : 16,
+      ),
       child: GestureDetector(
-        onTap: () {}, // 拦截点击
-        child: Align(
-          alignment: Alignment.bottomCenter,
+        onTap: () {},
+        child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: screenWidth - horizontalInset * 2,
-            ),
+            constraints: const BoxConstraints(maxWidth: 1000),
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: isCompact ? 10 : 16,
                 vertical: isCompact ? 8 : 10,
               ),
               decoration: BoxDecoration(
-                color: _bgFromSettings(settings).withValues(alpha: 0.85),
+                color: _bgFromSettings(settings).withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: AppColors.border.withValues(alpha: 0.3),
                   width: 0.5,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
               ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // ── 模式选择 ──
-                    if (!isRemoteClient) ...[
-                      _buildModeSelector(settings, settingsProvider),
-                      SizedBox(width: isCompact ? 8 : 12),
-                    ],
-
-                    // ── 播放控制 ──
-                    if (!isRemoteClient)
-                      _buildCompactPlaybackControls(teleprompter, settings),
-
-                    // ── 速度/信息 ──
-                    if (settings.scrollMode != ScrollMode.asr) ...[
-                      if (!isRemoteClient) SizedBox(width: isCompact ? 8 : 12),
-                      _buildSpeedDisplay(
-                        settings,
-                        settingsProvider,
-                        readOnly: isRemoteClient,
-                      ),
-                    ] else ...[
-                      SizedBox(width: isCompact ? 8 : 12),
-                      _buildRmsMeter(teleprompter, settings),
-                    ],
-
-                    // ── 设置齿轮 ──
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(
-                        Icons.settings,
-                        color: AppColors.textSecondary,
-                        size: 22,
-                      ),
-                      onPressed: _openSettingsPanel,
-                      tooltip: '设置',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
-                      ),
+              child: isCompact
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: primary,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: secondary,
+                        ),
+                      ],
+                    )
+                  : Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        if (!isRemoteClient) secondary.first,
+                        if (!isRemoteClient) playback,
+                        status,
+                        settingsButton,
+                      ],
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),
@@ -893,10 +919,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   /// 滚动模式按可见行高度移动，按行模式保留原有逐字前后跳转。
   double _bodyRowHeight(AppSettings settings) =>
+      textLayerKey.currentState?.currentVisualRowHeight ??
       settings.fontSize *
-          AppSettings.maxCurrentCharScale *
-          settings.lineHeight +
-      4;
+              AppSettings.maxCurrentCharScale *
+              settings.lineHeight +
+          4;
 
   void _stepPlayback(
     TeleprompterProvider teleprompter,
@@ -992,7 +1019,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border, width: 0.5),
       ),
-      child: Row(
+      child: Wrap(
+        alignment: WrapAlignment.center,
         children: [
           _buildModeChip(
             icon: Icons.menu_book,
@@ -1027,6 +1055,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       onTap: () {
         if (!isSelected) {
           unawaited(_selectScrollMode(mode, settingsProvider));
+        } else if (mode == ScrollMode.asr) {
+          final teleprompter = context.read<TeleprompterProvider>();
+          if (teleprompter.asrStatus == 'error') {
+            teleprompter.togglePlayPause(settings);
+          }
         } else if (mode == ScrollMode.auto) {
           // 返回按行模式前把当前位置映射到字符，避免跳回滚动前的旧游标。
           if (settings.isContinuousScroll) {
@@ -1062,14 +1095,16 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   : AppColors.textMuted,
             ),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected
-                    ? _primaryFromSettings(settings)
-                    : AppColors.textMuted,
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected
+                      ? _primaryFromSettings(settings)
+                      : AppColors.textMuted,
+                ),
               ),
             ),
           ],
@@ -1097,6 +1132,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     if (!connection.isLocal) return true;
     final settingsProvider = context.read<SettingsProvider>();
     final modelId = settingsProvider.settings.asrModelId;
+    // The default model is validated/restored by the backend preparation
+    // flow, including a fresh install whose user-data directory is empty.
+    if (modelId.isEmpty || modelId == AppSettings.defaultAsrModelId)
+      return true;
     final available =
         modelId.isNotEmpty &&
         await AsrService.instance.isModelDownloaded(modelId);
@@ -1127,6 +1166,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
       if (!mounted) return false;
       final selectedId = settingsProvider.settings.asrModelId;
+      if (selectedId.isEmpty || selectedId == AppSettings.defaultAsrModelId) {
+        return true;
+      }
       return selectedId.isNotEmpty &&
           await AsrService.instance.isModelDownloaded(selectedId);
     }
@@ -1300,8 +1342,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   Widget _buildTextLayer(
     BuildContext context,
     TeleprompterProvider teleprompter,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    required double readingLineY,
+  }) {
     // 自动滚动播放中阻止滚轮手动滚动
     final connection = context.read<ConnectionProvider>();
     final isRemoteClient =
@@ -1316,50 +1359,51 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         ? const NeverScrollableScrollPhysics()
         : const ClampingScrollPhysics();
 
-    return Positioned.fill(
-      child: PromptEntrance(
-        child: TeleprompterTextLayer(
-          key: textLayerKey,
-          scrollController: scrollController,
-          lines: teleprompter.lines,
-          currentIndex: teleprompter.currentIndex,
-          fontSize: settings.fontSize,
-          lineHeight: settings.lineHeight,
-          mirrorMode: settings.mirrorMode,
-          autoFollow: blockScroll && !settings.isContinuousScroll,
-          continuous: settings.isContinuousScroll,
-          seekRevision: teleprompter.viewportSeekRevision,
-          seekProgress: teleprompter.progress,
-          isPlaying: teleprompter.isPlaying,
-          pixelsPerSecond: settings.pixelsPerSecond,
-          remoteProgress: isRemoteClient && settings.isContinuousScroll
-              ? teleprompter.progress
-              : null,
-          onScrollBoundary: (atStart) =>
-              teleprompter.finishContinuousScroll(atStart: atStart),
-          paddingX: settings.paddingX,
-          readingLineOffset: settings.readingLineOffset,
-          physics: physics,
-          onCharTap: (rawIndex) {
-            if (isRemoteClient) return;
-            teleprompter.setCurrentIndex(rawIndex);
-          },
-          onReadingLineChanged: (rawIndex) {
-            if (blockScroll || isRemoteClient) return;
-            teleprompter.setCurrentIndex(rawIndex);
-          },
-          teleprompterFontFamily: settings.teleprompterFontFamily,
-          grayReadChars: settings.grayReadChars,
-          readingEmphasisEnabled: settings.readingEmphasisEnabled,
-          currentCharColor: settings.currentCharColor,
-          readCharColor: settings.readCharColor,
-          currentCharScale: settings.currentCharScale,
-          textColor: settings.textColor,
-          letterSpacing: settings.letterSpacing,
-          highlightCurrentChar: settings.highlightCurrentChar,
-          defaultBold: settings.defaultBold,
-          underlineCurrentChar: settings.underlineCurrentChar,
-        ),
+    return PromptEntrance(
+      child: TeleprompterTextLayer(
+        key: textLayerKey,
+        scrollController: scrollController,
+        lines: teleprompter.lines,
+        currentIndex: teleprompter.currentIndex,
+        fontSize: settings.fontSize,
+        lineHeight: settings.lineHeight,
+        mirrorMode: settings.mirrorMode,
+        autoFollow: blockScroll && !settings.isContinuousScroll,
+        continuous: settings.isContinuousScroll,
+        seekRevision: teleprompter.viewportSeekRevision,
+        seekProgress: teleprompter.progress,
+        isPlaying: teleprompter.isPlaying,
+        pixelsPerSecond: settings.pixelsPerSecond,
+        remoteProgress: isRemoteClient && settings.isContinuousScroll
+            ? teleprompter.progress
+            : null,
+        onScrollBoundary: (atStart) =>
+            teleprompter.finishContinuousScroll(atStart: atStart),
+        paddingX: settings.paddingX,
+        readingLineOffset: settings.readingLineOffset,
+        readingLineY: readingLineY,
+        showReadingFrame: !settings.isContinuousScroll,
+        readingAreaBorderWidth: settings.readingAreaBorderWidth,
+        physics: physics,
+        onCharTap: (rawIndex) {
+          if (isRemoteClient) return;
+          teleprompter.setCurrentIndex(rawIndex);
+        },
+        onReadingLineChanged: (rawIndex) {
+          if (blockScroll || isRemoteClient) return;
+          teleprompter.setCurrentIndex(rawIndex);
+        },
+        teleprompterFontFamily: settings.teleprompterFontFamily,
+        grayReadChars: settings.grayReadChars,
+        readingEmphasisEnabled: settings.readingEmphasisEnabled,
+        currentCharColor: settings.currentCharColor,
+        readCharColor: settings.readCharColor,
+        currentCharScale: settings.currentCharScale,
+        textColor: settings.textColor,
+        letterSpacing: settings.letterSpacing,
+        highlightCurrentChar: settings.highlightCurrentChar,
+        defaultBold: settings.defaultBold,
+        underlineCurrentChar: settings.underlineCurrentChar,
       ),
     );
   }
@@ -1369,84 +1413,6 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   /// 阅读线固定金色（与原版 fdc800 一致）
   static const Color _readingLineGold = Color(0xFFFDC800);
 
-  Widget _buildReadingLine(BuildContext context, AppSettings settings) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < LayoutConstants.compactBreakpoint;
-    final defaultRatio = isMobile
-        ? TeleprompterConstants.readingLineRatioMobile
-        : TeleprompterConstants.readingLineRatioDesktop;
-    final readingLineY =
-        screenHeight *
-        (settings.readingLineOffset > 0
-            ? settings.readingLineOffset
-            : defaultRatio);
-    // 正文始终按最大突出尺寸预留行高，改变突出倍率不会移动阅读框。
-    final perLineHeight = _bodyRowHeight(settings);
-    // 阅读区域高度 = 3 行（与原版一致，修正 padding 的影响）
-    final areaHeight = perLineHeight * 3 - 2; // 略减2px避免与上下行边界重叠
-    // 水平边距计算（与文本层一致）
-    final basePadding = isMobile
-        ? TeleprompterConstants.mobileHorizontalPadding
-        : TeleprompterConstants.desktopHorizontalPadding;
-    final extraPadding = screenWidth * settings.paddingX / 100;
-    final horizontalPadding = basePadding + extraPadding;
-
-    return Positioned(
-      top: readingLineY - areaHeight / 2,
-      left: horizontalPadding,
-      right: horizontalPadding,
-      child: IgnorePointer(
-        child: _mirrorPromptOverlayIfNeeded(
-          settings: settings,
-          child: SizedBox(
-            height: areaHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 金色边框（与原版 #fdc800 一致）
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: _readingLineGold.withValues(alpha: 0.9),
-                        width: settings.readingAreaBorderWidth,
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                // "Reading Area" 标签
-                Positioned(
-                  top: -10,
-                  left: 16,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 1,
-                    ),
-                    color: AppColors.teleprompterBgFromSettings(
-                      settings.teleprompterBgColor,
-                    ),
-                    child: Text(
-                      'READING AREA',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _readingLineGold.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ─── ASR 音量指示器 ──────────────────────────────────
 
   Widget _buildAsrTranscriptOverlay(
@@ -1454,7 +1420,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     AppSettings settings,
   ) {
     final message = switch (teleprompter.asrStatus) {
-      'loading' => '正在加载语音识别模型...',
+      'loading' => teleprompter.asrMessage ?? '正在准备语音识别…',
       'error' => teleprompter.asrError ?? '语音识别启动失败',
       _ when teleprompter.asrTranscript.isNotEmpty =>
         teleprompter.asrTranscript,
@@ -1462,10 +1428,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
       _ => '等待语音输入',
     };
 
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: MediaQuery.of(context).padding.bottom + 92,
+    return Padding(
+      key: const ValueKey('teleprompter-asr-status'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: IgnorePointer(
         child: Center(
           child: ConstrainedBox(
@@ -1521,8 +1486,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
 
   Widget _buildRmsMeter(
     TeleprompterProvider teleprompter,
-    AppSettings settings,
-  ) {
+    AppSettings settings, {
+    bool compact = false,
+  }) {
     final normalizedRms = (teleprompter.rms * 3).clamp(0.0, 1.0);
     final connection = context.read<ConnectionProvider>();
     final canSelectDevice = connection.isLocal && !teleprompter.isPlaying;
@@ -1538,7 +1504,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             : null,
         borderRadius: BorderRadius.circular(6),
         child: SizedBox(
-          width: 160,
+          width: compact ? 88 : 160,
           height: 28,
           child: Row(
             children: [

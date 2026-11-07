@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:archive/archive_io.dart';
@@ -11,6 +12,10 @@ import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import '../system/app_data_directory.dart';
+import '../../models/app_settings.dart';
+import '../../utils/constants.dart';
+import 'asr_model_store.dart';
+import 'asr_preparation_exception.dart';
 import 'pcm_resampler.dart';
 
 /// ASR 模型信息
@@ -65,12 +70,12 @@ class AsrModels {
     ),
     AsrModelInfo(
       id: 'zipformer2-ced',
-      name: 'Zipformer2 CED 中文',
-      description: '流式中文语音识别，Transducer 架构',
+      name: AppSettings.defaultAsrModelName,
+      description: '随安装包提供，缺失或损坏时从魔搭社区自动恢复',
       downloadUrl:
-          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2',
+          'https://modelscope.cn/models/HZZSCIENCE/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23',
       mirrorUrl: null,
-      approximateSizeMB: 70,
+      approximateSizeMB: 54,
       scenario: '资源受限设备和低延迟跟随',
       accuracy: '标准',
       latency: '很低',
@@ -340,6 +345,9 @@ class AsrService with ChangeNotifier {
   bool _isRunning = false;
   bool _isModelLoaded = false;
   bool _isReleased = false;
+  Future<AsrModelManifest>? _defaultManifest;
+  Future<void>? _defaultPreparation;
+  AsrModelStore? _defaultModelStore;
   String? _currentModelId;
 
   // 回调
@@ -379,6 +387,17 @@ class AsrService with ChangeNotifier {
 
   /// 取消当前正在进行的下载
   Future<void> cancelDownload() async {
+    final preparation = _defaultPreparation;
+    if (preparation != null) {
+      _currentDownloadCancelled = true;
+      _defaultModelStore?.cancel();
+      try {
+        await preparation;
+      } catch (_) {
+        // The original caller receives the preparation failure/cancellation.
+      }
+      return;
+    }
     if (_currentDownloadModelId != null) {
       _currentDownloadCancelled = true;
       final subscription = _currentDownloadSubscription;
@@ -542,7 +561,124 @@ class AsrService with ChangeNotifier {
     final targetDir = Directory(p.join(modelDir, modelId));
     if (!await targetDir.exists()) return false;
     await _flattenInstalledModelFiles(targetDir);
+    if (modelId == AppSettings.defaultAsrModelId) {
+      return (await _loadDefaultManifest()).isDirectoryValid(targetDir);
+    }
     return _containsRequiredModelFiles(targetDir);
+  }
+
+  Future<AsrModelManifest> _loadDefaultManifest() {
+    return _defaultManifest ??= rootBundle
+        .loadString(AsrModelManifest.assetPath)
+        .then(AsrModelManifest.parse);
+  }
+
+  /// Verifies the selected model. Only the reserved built-in model is restored.
+  Future<void> prepareModel(
+    String modelId, {
+    bool useSystemProxy = true,
+    DownloadProgressCallback? onProgress,
+  }) async {
+    if (modelId != AppSettings.defaultAsrModelId) {
+      if (!await isModelDownloaded(modelId)) {
+        throw const AsrModelPreparationException('所选语音模型尚未安装完整，请在设置中下载该模型后重试。');
+      }
+      return;
+    }
+    final activePreparation = _defaultPreparation;
+    if (activePreparation != null) {
+      void relayProgress() {
+        final progress = getDownloadProgress(modelId);
+        onProgress?.call(progress.progress, progress.message);
+      }
+
+      addListener(relayProgress);
+      try {
+        relayProgress();
+        await activePreparation;
+      } finally {
+        removeListener(relayProgress);
+      }
+      return;
+    }
+    if (_currentDownloadModelId != null) {
+      throw const AsrModelPreparationException('正在下载其他语音模型，请等待下载完成后再点击语音。');
+    }
+    _currentDownloadCancelled = false;
+    _currentDownloadModelId = modelId;
+    final operation = _prepareDefaultModel(useSystemProxy, onProgress);
+    _defaultPreparation = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_defaultPreparation, operation)) _defaultPreparation = null;
+    }
+  }
+
+  Future<void> _prepareDefaultModel(
+    bool useSystemProxy,
+    DownloadProgressCallback? onProgress,
+  ) async {
+    const modelId = AppSettings.defaultAsrModelId;
+    void report(double value, String message) {
+      _downloadProgress[modelId] = DownloadProgress(
+        progress: value,
+        message: message,
+        isDownloading: true,
+      );
+      if (!_isReleased) notifyListeners();
+      onProgress?.call(value, message);
+    }
+
+    try {
+      report(0, '正在校验中文语音模型…');
+      final manifest = await _loadDefaultManifest();
+      final root = Directory(await _getModelDir());
+      if (_currentDownloadCancelled) {
+        throw const AsrModelPreparationException(
+          '已取消语音模型准备',
+          isCancelled: true,
+        );
+      }
+      final store = AsrModelStore(
+        manifest: manifest,
+        modelRoot: root,
+        bundledDirectory: Directory(
+          p.join(
+            File(Platform.resolvedExecutable).parent.path,
+            StorageConstants.bundledAsrModelsDirectoryName,
+            modelId,
+          ),
+        ),
+        fallbackClientFactory: useSystemProxy
+            ? () async {
+                final proxy = await _resolveSystemProxyConfig();
+                return IOClient(HttpClient()..findProxy = proxy.findProxy);
+              }
+            : null,
+      );
+      _defaultModelStore = store;
+      await store.prepare(onProgress: report);
+      _downloadProgress[modelId] = const DownloadProgress(
+        progress: 1,
+        message: '中文语音模型已就绪',
+        isCompleted: true,
+      );
+    } catch (error, stackTrace) {
+      final cause = error is AsrModelPreparationException ? error.cause : null;
+      debugPrint('[AsrService] 中文模型准备失败: $error; 原因: $cause\n$stackTrace');
+      final cancelled =
+          error is AsrModelPreparationException && error.isCancelled;
+      _downloadProgress[modelId] = DownloadProgress(
+        message: cancelled ? '已取消语音模型准备' : '语音模型准备失败，请重试',
+        error: cancelled ? null : error.toString(),
+      );
+      rethrow;
+    } finally {
+      _defaultModelStore = null;
+      _currentDownloadModelId = null;
+      if (!_isReleased) notifyListeners();
+    }
   }
 
   /// Returns built-in models plus valid models imported from local archives.
@@ -557,7 +693,10 @@ class AsrService with ChangeNotifier {
     await for (final entity in modelRoot.list()) {
       if (entity is! Directory) continue;
       final id = p.basename(entity.path);
-      if (builtInIds.contains(id) || id.endsWith('.importing')) continue;
+      if (builtInIds.contains(id) ||
+          id.startsWith('.') ||
+          id.endsWith('.importing'))
+        continue;
       if (!await _containsRequiredModelFiles(entity)) continue;
 
       var name = id;
@@ -614,6 +753,14 @@ class AsrService with ChangeNotifier {
     DownloadProgressCallback? onProgress,
   }) async {
     final modelId = modelInfo.id;
+    if (modelId == AppSettings.defaultAsrModelId) {
+      await prepareModel(
+        modelId,
+        useSystemProxy: useSystemProxy,
+        onProgress: onProgress,
+      );
+      return;
+    }
     // 如果已经在下载，不重复启动
     if (_currentDownloadModelId != null ||
         _downloadProgress[modelId]?.isDownloading == true) {
@@ -960,6 +1107,9 @@ class AsrService with ChangeNotifier {
     String? modelId,
     String? archiveName,
   }) async {
+    if (_currentDownloadModelId != null) {
+      throw StateError('正在准备语音模型，请完成或取消后再导入');
+    }
     final source = File(archivePath);
     if (!await source.exists()) throw ArgumentError('模型文件不存在');
     await _detectModelArchiveFormat(source);
@@ -985,6 +1135,10 @@ class AsrService with ChangeNotifier {
     await staging.create(recursive: true);
     try {
       await _extractArchiveInBackground(archivePath, staging.path);
+      if (resolvedId == AppSettings.defaultAsrModelId &&
+          !await (await _loadDefaultManifest()).isDirectoryValid(staging)) {
+        throw const FormatException('内置中文模型身份校验失败，请导入匹配的模型或使用其他名称');
+      }
       final archiveSize = await source.length();
       await File(p.join(staging.path, '.model.json')).writeAsString(
         jsonEncode({
@@ -1067,6 +1221,8 @@ class AsrService with ChangeNotifier {
     double rule1MinTrailingSilence = 2.4,
     double rule2MinTrailingSilence = 1.2,
     double rule3MinUtteranceLength = 20.0,
+    bool useSystemProxy = true,
+    DownloadProgressCallback? onProgress,
   }) async {
     if (!_bindingsInitialized) {
       throw StateError('sherpa-onnx 尚未初始化，请先调用 AsrService.init()');
@@ -1076,6 +1232,11 @@ class AsrService with ChangeNotifier {
       await unloadModel();
     }
 
+    await prepareModel(
+      modelId,
+      useSystemProxy: useSystemProxy,
+      onProgress: onProgress,
+    );
     final modelDir = await _getModelDir();
     final targetDir = p.join(modelDir, modelId);
 
@@ -1108,6 +1269,20 @@ class AsrService with ChangeNotifier {
         }
       }
 
+      // The built-in identity pins one coherent float32 family, even if an
+      // older archive left quantized variants beside it.
+      String modelType = '';
+      if (modelId == AppSettings.defaultAsrModelId) {
+        final manifest = await _loadDefaultManifest();
+        String fileFor(String role) =>
+            p.join(dir.path, manifest.fileForRole(role).name);
+        tokensPath = fileFor('tokens');
+        encoderPath = fileFor('encoder');
+        decoderPath = fileFor('decoder');
+        joinerPath = fileFor('joiner');
+        modelType = manifest.modelFamily;
+      }
+
       if (tokensPath == null) {
         throw Exception('模型文件不完整：缺少 tokens.txt');
       }
@@ -1131,6 +1306,7 @@ class AsrService with ChangeNotifier {
       if (joinerPath != null) {
         // Transducer 模型（如 Zipformer）
         modelConfig = sherpa.OnlineModelConfig(
+          modelType: modelType,
           transducer: sherpa.OnlineTransducerModelConfig(
             encoder: encoderPath,
             decoder: decoderPath,
@@ -1381,6 +1557,7 @@ class AsrService with ChangeNotifier {
   Future<void> release() async {
     if (_isReleased) return;
     _isReleased = true;
+    await cancelDownload();
     await unloadModel();
     await stopInputPreview();
     await _recorderInstance?.dispose();

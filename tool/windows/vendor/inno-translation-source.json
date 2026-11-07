@@ -1,0 +1,10 @@
+{
+  "component": "Inno Setup Simplified Chinese translation",
+  "repository": "jrsoftware/issrc",
+  "ref": "is-6_7_3",
+  "path": "Files/Languages/Unofficial/ChineseSimplified.isl",
+  "gitBlob": "d6a11c4490de07dad443ade668289fc954dfa1ed",
+  "url": "https://github.com/jrsoftware/issrc/blob/is-6_7_3/Files/Languages/Unofficial/ChineseSimplified.isl",
+  "license": "InnoSetup-LICENSE.txt",
+  "normalization": "UTF-8 with BOM and Windows line endings; message content and upstream notices retained"
+}

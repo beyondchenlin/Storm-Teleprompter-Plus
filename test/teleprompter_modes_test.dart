@@ -49,11 +49,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('自动-按行'), findsOneWidget);
-      expect(find.text('READING AREA'), findsOneWidget);
+      expect(find.text('阅读区'), findsOneWidget);
       await tester.tap(find.text('自动-按行'));
       await tester.pumpAndSettle();
       expect(find.text('自动-滚动'), findsOneWidget);
-      expect(find.text('READING AREA'), findsNothing);
+      expect(find.text('阅读区'), findsNothing);
       expect(find.text('像素/秒'), findsOneWidget);
       tester
           .widget<TeleprompterTextLayer>(find.byType(TeleprompterTextLayer))
@@ -143,7 +143,7 @@ void main() {
       await settings.setScrollMode(ScrollMode.asr);
       await tester.pumpAndSettle();
       expect(find.text('自动'), findsOneWidget);
-      expect(find.text('READING AREA'), findsOneWidget);
+      expect(find.text('阅读区'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       teleprompter.dispose();
       settings.dispose();

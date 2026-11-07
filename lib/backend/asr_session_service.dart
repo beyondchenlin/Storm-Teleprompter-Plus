@@ -1,5 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
+import '../models/app_settings.dart';
+import '../services/asr/asr_preparation_exception.dart';
+
 import '../services/asr/alignment_engine.dart';
 import '../services/asr/asr_transcript_normalizer.dart';
 import '../services/asr_service.dart';
@@ -15,7 +20,13 @@ typedef AsrPositionChanged =
     void Function(int currentIndex, {bool allowBackward});
 
 class AsrSessionService {
-  AsrSessionService(this._settingsService, this._onCurrentIndexChanged);
+  AsrSessionService(
+    this._settingsService,
+    this._onCurrentIndexChanged, {
+    AsrService? asr,
+    void Function()? initializeBindings,
+  }) : _asr = asr ?? AsrService.instance,
+       _initializeBindings = initializeBindings ?? AsrService.init;
 
   static const unloadDelay = Duration(seconds: 20);
   static const int maxPartialAdvance = 4;
@@ -39,12 +50,15 @@ class AsrSessionService {
 
   final SettingsService _settingsService;
   final AsrPositionChanged _onCurrentIndexChanged;
-  final AsrService _asr = AsrService.instance;
+  final AsrService _asr;
+  final void Function() _initializeBindings;
   final TeleprompterAlignment _alignment = TeleprompterAlignment();
   WsServer? _server;
   Timer? _unloadTimer;
   Future<void>? _pendingUnload;
   Future<void>? _startOperation;
+  Future<void>? _pauseOperation;
+  int _startGeneration = 0;
   String _articleId = '';
   String _transcript = '';
   String _committedTranscript = '';
@@ -53,6 +67,11 @@ class AsrSessionService {
   int _currentIndex = -1;
   AsrSessionStatus _status = AsrSessionStatus.idle;
   String? _error;
+  String? _message;
+
+  AsrSessionStatus get status => _status;
+  String? get error => _error;
+  String? get message => _message;
   String? _loadedConfigKey;
   DateTime? _lastRmsBroadcastAt;
 
@@ -100,17 +119,30 @@ class AsrSessionService {
     _alignment.setCurrentIndex(currentIndex);
   }
 
-  Future<void> pause() async {
+  Future<void> pause() {
+    final activePause = _pauseOperation;
+    if (activePause != null) return activePause;
+    final operation = _pauseInternal();
+    _pauseOperation = operation;
+    return operation.whenComplete(() {
+      if (identical(_pauseOperation, operation)) _pauseOperation = null;
+    });
+  }
+
+  Future<void> _pauseInternal() async {
+    _startGeneration++;
     final startOperation = _startOperation;
+    if (_status == AsrSessionStatus.loading) await _asr.cancelDownload();
     if (startOperation != null) {
       try {
         await startOperation;
       } catch (_) {
-        // Start errors are already reflected in ASR status; pause still wins.
+        // Cancellation/error belongs to the original start; pause still wins.
       }
     }
     await _asr.stop();
     _rms = 0;
+    _message = null;
     _status = AsrSessionStatus.paused;
     _broadcastStatus();
   }
@@ -132,16 +164,11 @@ class AsrSessionService {
 
   Future<void> shutdown() async {
     _unloadTimer?.cancel();
-    final startOperation = _startOperation;
-    if (startOperation != null) {
-      try {
-        await startOperation;
-      } catch (_) {}
-    }
-    await _asr.stop();
+    await pause();
     await _asr.unloadModel();
     _loadedConfigKey = null;
     _articleId = '';
+    _message = null;
     _status = AsrSessionStatus.idle;
   }
 
@@ -151,12 +178,16 @@ class AsrSessionService {
   }
 
   Future<void> start() async {
+    final pendingPause = _pauseOperation;
+    if (pendingPause != null) await pendingPause;
+    if (_status == AsrSessionStatus.running && _asr.isRunning) return;
     final activeOperation = _startOperation;
     if (activeOperation != null) {
       await activeOperation;
       return;
     }
-    final operation = _startInternal();
+    final generation = ++_startGeneration;
+    final operation = _startInternal(generation);
     _startOperation = operation;
     try {
       await operation;
@@ -165,19 +196,30 @@ class AsrSessionService {
     }
   }
 
-  Future<void> _startInternal() async {
+  void _checkStartGeneration(int generation) {
+    if (generation != _startGeneration) {
+      throw const AsrModelPreparationException('已取消语音启动', isCancelled: true);
+    }
+  }
+
+  Future<void> _startInternal(int generation) async {
     if (_articleId.isEmpty) throw StateError('当前没有活动的提词会话');
     if (_status == AsrSessionStatus.running && _asr.isRunning) return;
     _unloadTimer?.cancel();
     await _pendingUnload;
     _pendingUnload = null;
+    _checkStartGeneration(generation);
     _error = null;
+    _message = '正在准备中文语音识别…';
     _status = AsrSessionStatus.loading;
     _broadcastStatus();
+    var phase = 'model';
     try {
       final settings = await _settingsService.loadSettings();
-      final modelId = settings.asrModelId;
-      if (modelId.isEmpty) throw StateError('尚未选择语音识别模型');
+      _checkStartGeneration(generation);
+      final modelId = settings.asrModelId.trim().isEmpty
+          ? AppSettings.defaultAsrModelId
+          : settings.asrModelId;
       final configKey = [
         modelId,
         settings.asrNumThreads,
@@ -185,31 +227,71 @@ class AsrSessionService {
         settings.asrRule2MinTrailingSilence,
         settings.asrRule3MinUtteranceLength,
       ].join('|');
-      AsrService.init();
+      _initializeBindings();
       if (!_asr.isModelLoaded ||
           _asr.currentModelId != modelId ||
           _loadedConfigKey != configKey) {
+        DateTime? lastProgressAt;
         await _asr.loadModel(
           modelId,
           numThreads: settings.asrNumThreads,
           rule1MinTrailingSilence: settings.asrRule1MinTrailingSilence,
           rule2MinTrailingSilence: settings.asrRule2MinTrailingSilence,
           rule3MinUtteranceLength: settings.asrRule3MinUtteranceLength,
+          useSystemProxy: settings.asrUseSystemProxy,
+          onProgress: (value, message) {
+            if (generation != _startGeneration) return;
+            _message = message;
+            final now = DateTime.now();
+            if (value == 1 ||
+                lastProgressAt == null ||
+                now.difference(lastProgressAt!) >=
+                    const Duration(milliseconds: 100)) {
+              lastProgressAt = now;
+              _broadcastStatus();
+            }
+          },
         );
+        _checkStartGeneration(generation);
         _loadedConfigKey = configKey;
       }
+      _checkStartGeneration(generation);
+      phase = 'microphone';
+      _message = '正在启动麦克风…';
+      _broadcastStatus();
       await _asr.start(
-        onPartialResult: (text) => _handleTranscript(text, false),
-        onFinalResult: (text) => _handleTranscript(text, true),
-        onRmsUpdate: _handleRms,
+        onPartialResult: (text) {
+          if (generation == _startGeneration) _handleTranscript(text, false);
+        },
+        onFinalResult: (text) {
+          if (generation == _startGeneration) _handleTranscript(text, true);
+        },
+        onRmsUpdate: (value) {
+          if (generation == _startGeneration) _handleRms(value);
+        },
         inputDeviceId: settings.asrInputDeviceId,
-        onError: _handleRecognizerError,
+        onError: (error) {
+          if (generation == _startGeneration) _handleRecognizerError(error);
+        },
       );
+      _checkStartGeneration(generation);
+      if (!_asr.isRunning) throw StateError('麦克风采集启动后已中断');
+      _message = null;
       _status = AsrSessionStatus.running;
       _broadcastStatus();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('[AsrSessionService] 语音启动失败 ($phase): $error\n$stackTrace');
+      if (generation != _startGeneration) {
+        await _asr.stop();
+        rethrow;
+      }
       _status = AsrSessionStatus.error;
-      _error = error.toString();
+      _message = null;
+      _error = error is AsrModelPreparationException
+          ? error.message
+          : phase == 'microphone'
+          ? '麦克风启动失败。请检查麦克风权限和设备连接，再点击语音重试。'
+          : '语音模型加载失败。请重新启动应用后点击语音重试；仍失败时请重新安装。';
       _broadcastStatus();
       rethrow;
     }
@@ -312,7 +394,9 @@ class AsrSessionService {
 
   void _handleRecognizerError(Object error) {
     _status = AsrSessionStatus.error;
-    _error = '麦克风采集失败: $error';
+    debugPrint('[AsrSessionService] 麦克风采集失败: $error');
+    _message = null;
+    _error = '麦克风采集已中断。请检查设备连接和麦克风权限，再点击语音重试。';
     _rms = 0;
     _broadcastStatus();
   }
@@ -325,6 +409,7 @@ class AsrSessionService {
     'rms': _rms,
     'currentIndex': _currentIndex,
     'error': ?_error,
+    'message': _message,
   };
 
   void _broadcastStatus() {
