@@ -1,14 +1,15 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(BK103 LANGUAGES CXX)
+project(BKTeleprompter LANGUAGES CXX)
 
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "BK103")
+# Flutter reads this literal to locate the executable on disk.
+set(BINARY_NAME "BK 提词器")
+# CMake logical target names must use ASCII without spaces.
+set(BINARY_TARGET "BKTeleprompter")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -59,14 +60,19 @@ add_subdirectory("runner")
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# Generated plugin rules expect BINARY_NAME to be the logical target. Keep
+# the include in directory scope so PLUGIN_BUNDLED_LIBRARIES remains available.
+set(BINARY_OUTPUT_NAME "${BINARY_NAME}")
+set(BINARY_NAME "${BINARY_TARGET}")
 include(flutter/generated_plugins.cmake)
+set(BINARY_NAME "${BINARY_OUTPUT_NAME}")
 
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
 # run in place. This is done instead of making a separate bundle (as on Linux)
 # so that building and running from within Visual Studio will work.
-set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
+set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_TARGET}>")
 # Make the "install" step default, as it's required to run.
 set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -76,7 +82,7 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
-install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+install(TARGETS ${BINARY_TARGET} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

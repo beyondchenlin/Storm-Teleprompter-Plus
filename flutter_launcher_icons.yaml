@@ -1,5 +1,5 @@
 # This generates application/launcher icons, not an in-app image asset.
-# Keep the original artwork at assets/branding/BK103-source.jpg, then run:
+# Keep the original artwork at assets/branding/BK-Teleprompter-source.png, then run:
 # powershell -ExecutionPolicy Bypass -File tool/generate_icons.ps1
 flutter_launcher_icons:
   image_path: lib/favicon.png

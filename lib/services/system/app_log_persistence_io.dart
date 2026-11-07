@@ -155,7 +155,8 @@ class AppLogPersistence implements AppLogPersistenceBackend {
   bool _isManagedLogFile(File file) {
     final name = p.basename(file.path);
     return (name.startsWith(StorageConstants.startupLogFilePrefix) ||
-            name.startsWith(StorageConstants.legacyStartupLogFilePrefix)) &&
+            name.startsWith(StorageConstants.legacyStartupLogFilePrefix) ||
+            name.startsWith(StorageConstants.previousStartupLogFilePrefix)) &&
         name.endsWith('.log');
   }
 

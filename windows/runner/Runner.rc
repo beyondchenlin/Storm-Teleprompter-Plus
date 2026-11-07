@@ -89,14 +89,15 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "BK103" "\0"
-            VALUE "FileDescription", "BK103" "\0"
+            VALUE "CompanyName", "陈林" "\0"
+            VALUE "FileDescription", "BK 提词器" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "BK103" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 Html5syt and BK103 contributors. MIT License." "\0"
-            VALUE "OriginalFilename", "BK103.exe" "\0"
-            VALUE "ProductName", "BK103" "\0"
+            VALUE "InternalName", "BK 提词器" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 陈林. MIT License." "\0"
+            VALUE "OriginalFilename", "BK 提词器.exe" "\0"
+            VALUE "ProductName", "BK 提词器" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
+            VALUE "Comments", "创作者：陈林；联系邮箱：beyond.chenlin@gmail.com" "\0"
         END
     END
     BLOCK "VarFileInfo"

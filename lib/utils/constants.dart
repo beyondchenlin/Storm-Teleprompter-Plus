@@ -2,12 +2,17 @@
 abstract final class AppConstants {
   AppConstants._();
 
-  static const String displayName = 'BK103';
-  static const String englishName = 'BK103';
+  static const String displayName = 'BK 提词器';
+  static const String englishName = displayName;
+  static const String creator = '陈林';
+  static const String contactEmail = 'beyond.chenlin@gmail.com';
+  static const String copyright = 'Copyright (c) 2026 陈林';
   static const String chineseAboutDescription =
-      '基于 Flutter 构建的跨平台智能提词器，支持富文本稿件管理、自动滚动、离线语音识别、分光镜镜像显示，以及局域网多设备同步。';
+      '基于 Flutter（跨平台开发框架）构建的智能提词器，支持富文本稿件管理、自动滚动、离线语音识别、分光镜镜像显示，以及局域网多设备同步。'
+      '\n创作者：$creator\n联系邮箱：$contactEmail';
   static const String englishAboutDescription =
-      'A cross-platform teleprompter, featuring offline speech recognition, LAN device synchronization and more.';
+      'A cross-platform teleprompter, featuring offline speech recognition, LAN device synchronization and more.'
+      '\nCreator: $creator\nContact: $contactEmail';
 }
 
 /// 本地持久化约定。
@@ -26,10 +31,11 @@ abstract final class StorageConstants {
   static const String desktopDataDirectoryName = 'app_data';
   static const String desktopPreferencesFileName = 'application.json';
   static const String logDirectoryName = 'logs';
-  static const String startupLogFilePrefix = 'BK103-startup-';
+  static const String startupLogFilePrefix = 'BK 提词器-startup-';
   // Continue rotating historical logs after the product rename.
   static const String legacyStartupLogFilePrefix =
       'storm-teleprompter-startup-';
+  static const String previousStartupLogFilePrefix = 'BK103-startup-';
   static const int maxStartupLogFiles = 7;
 }
 

@@ -11,7 +11,7 @@ class AppLogExportService {
     final now = DateTime.now();
     String two(int number) => number.toString().padLeft(2, '0');
     final suggestedName =
-        'BK103-'
+        'BK 提词器-'
         '${now.year}${two(now.month)}${two(now.day)}-'
         '${two(now.hour)}${two(now.minute)}${two(now.second)}.log';
     final location = await getSaveLocation(

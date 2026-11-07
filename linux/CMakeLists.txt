@@ -2,9 +2,10 @@
 cmake_minimum_required(VERSION 3.13)
 project(runner LANGUAGES CXX)
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "BK103")
+# Flutter reads this literal to locate the executable on disk.
+set(BINARY_NAME "BK 提词器")
+# CMake logical target names must use ASCII without spaces.
+set(BINARY_TARGET "BKTeleprompter")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.example.storm_teleprompter_plus")
@@ -58,13 +59,13 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 add_subdirectory("runner")
 
 # Run the Flutter tool portions of the build. This must not be removed.
-add_dependencies(${BINARY_NAME} flutter_assemble)
+add_dependencies(${BINARY_TARGET} flutter_assemble)
 
 # Only the install-generated bundle's copy of the executable will launch
 # correctly, since the resources must in the right relative locations. To avoid
 # people trying to run the unbundled copy, put it in a subdirectory instead of
 # the default top-level location.
-set_target_properties(${BINARY_NAME}
+set_target_properties(${BINARY_TARGET}
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/intermediates_do_not_run"
 )
@@ -72,7 +73,12 @@ set_target_properties(${BINARY_NAME}
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# Generated plugin rules expect BINARY_NAME to be the logical target. Keep
+# the include in directory scope so PLUGIN_BUNDLED_LIBRARIES remains available.
+set(BINARY_OUTPUT_NAME "${BINARY_NAME}")
+set(BINARY_NAME "${BINARY_TARGET}")
 include(flutter/generated_plugins.cmake)
+set(BINARY_NAME "${BINARY_OUTPUT_NAME}")
 
 
 # === Installation ===
@@ -92,9 +98,9 @@ set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../lib/favicon.png"
-  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" RENAME "BK103.png" COMPONENT Runtime)
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" RENAME "BK 提词器.png" COMPONENT Runtime)
 
-install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+install(TARGETS ${BINARY_TARGET} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

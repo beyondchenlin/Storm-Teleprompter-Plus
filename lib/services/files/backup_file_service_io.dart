@@ -11,13 +11,13 @@ import '../../models/app_backup.dart';
 /// I/O，避免 UI 和后端散落 JSON 编解码逻辑。
 class BackupFileService {
   static const _backupFileTypes = [
-    XTypeGroup(label: 'BK103 备份', extensions: ['json']),
+    XTypeGroup(label: 'BK 提词器 备份', extensions: ['json']),
   ];
 
   Future<bool> save(AppBackup backup) async {
     final date = DateTime.now().toIso8601String().substring(0, 10);
     final location = await getSaveLocation(
-      suggestedName: 'BK103-backup-$date.json',
+      suggestedName: 'BK 提词器-backup-$date.json',
       acceptedTypeGroups: _backupFileTypes,
     );
     if (location == null) return false;

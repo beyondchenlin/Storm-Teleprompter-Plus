@@ -32,25 +32,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('关于 BK103'), findsOneWidget);
-    await tester.tap(find.text('关于 BK103'));
+    expect(find.text('关于 BK 提词器'), findsOneWidget);
+    await tester.tap(find.text('关于 BK 提词器'));
     await tester.pumpAndSettle();
 
-    expect(find.text('BK103'), findsNWidgets(2));
-    expect(find.text('访问 GitHub 项目主页'), findsOneWidget);
+    expect(find.text('BK 提词器'), findsNWidgets(2));
+    expect(find.text('访问项目主页'), findsOneWidget);
     expect(find.text('检查更新'), findsOneWidget);
-    expect(find.text('License'), findsOneWidget);
+    expect(find.text('陈林'), findsOneWidget);
+    expect(find.text('beyond.chenlin@gmail.com'), findsOneWidget);
+    expect(find.text('Copyright (c) 2026 陈林'), findsOneWidget);
+    expect(find.text('开源许可'), findsOneWidget);
     expect(find.textContaining('版本 1234abcd'), findsNWidgets(2));
 
-    await tester.tap(find.text('License'));
+    await tester.ensureVisible(find.text('开源许可'));
+    await tester.tap(find.text('开源许可'));
     await tester.pumpAndSettle();
 
-    expect(find.text('MIT License'), findsWidgets);
+    expect(find.text('MIT（开源许可证）'), findsWidgets);
     expect(find.textContaining('Copyright (c) 2026 Html5syt'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(Image));
     for (var index = 0; index < 10; index++) {
       await tester.tap(find.byType(Image));
     }

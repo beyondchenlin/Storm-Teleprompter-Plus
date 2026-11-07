@@ -13,15 +13,18 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $buildDirectory = Join-Path $projectRoot 'build\windows\x64\runner\Release'
-$executable = Join-Path $buildDirectory 'BK103.exe'
+$executable = Join-Path $buildDirectory 'BK 提词器.exe'
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-  throw 'Build BK103 for Windows in release mode before packaging.'
+  throw 'Build BK 提词器 for Windows in release mode before packaging.'
 }
 $metadata = (Get-Item -LiteralPath $executable).VersionInfo
-if ($metadata.ProductName -cne 'BK103' -or
-    $metadata.FileDescription -cne 'BK103' -or
-    $metadata.OriginalFilename -cne 'BK103.exe' -or
-    $metadata.InternalName -cne 'BK103') {
+if ($metadata.ProductName -cne 'BK 提词器' -or
+    $metadata.FileDescription -cne 'BK 提词器' -or
+    $metadata.OriginalFilename -cne 'BK 提词器.exe' -or
+    $metadata.InternalName -cne 'BK 提词器' -or
+    $metadata.CompanyName -cne '陈林' -or
+    $metadata.LegalCopyright -cne 'Copyright (C) 2026 陈林. MIT License.' -or
+    $metadata.Comments -cne '创作者：陈林；联系邮箱：beyond.chenlin@gmail.com') {
   throw 'Executable branding is incomplete.'
 }
 if ($metadata.ProductVersion -notmatch ('^' + [regex]::Escape($Version) + '(?:\+|\s|$)')) {
@@ -35,7 +38,7 @@ if ((Get-FileHash -LiteralPath $bundledIcon).Hash -ne
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
-$packageName = "BK103-$Version-windows-x64"
+$packageName = "BK 提词器-$Version-windows-x64"
 $packageDirectory = Join-Path $outputRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"
 $checksumFile = "$archive.sha256"
@@ -54,7 +57,7 @@ $publishedPaths = [Collections.Generic.List[string]]::new()
 [IO.Directory]::CreateDirectory($stage) | Out-Null
 try {
   # Explicit allowlist: never package a stale executable, app_data, or build logs.
-  Copy-Item -LiteralPath $executable -Destination (Join-Path $stage 'BK103.exe')
+  Copy-Item -LiteralPath $executable -Destination (Join-Path $stage 'BK 提词器.exe')
   Get-ChildItem -LiteralPath $buildDirectory -File -Filter '*.dll' |
     Copy-Item -Destination $stage
   Copy-Item -LiteralPath (Join-Path $buildDirectory 'data') -Destination $stage -Recurse
@@ -91,16 +94,20 @@ try {
     '语音跟读前，请在语音设置中下载或导入模型。'
   }
   $instructions = @"
-BK103（智能提词器）$Version
+BK 提词器（智能提词器）$Version
 
-1. 将整个压缩包解压到有写入权限的文件夹，再打开 BK103.exe（启动程序）。
+创作者：陈林
+联系邮箱：beyond.chenlin@gmail.com
+本产品定制部分版权：Copyright (c) 2026 陈林
+
+1. 将整个压缩包解压到有写入权限的文件夹，再打开 BK 提词器.exe（启动程序）。
 2. 请保留同目录的动态库和 data（程序资源）文件夹，不要只移动启动程序。
 3. $modelNote
 4. 稿件、设置和模型保存在 app_data（应用数据）文件夹。升级前先关闭软件并备份该文件夹，解压新版后再复制到新目录。
 5. 本分发包不含个人稿件、设置或运行日志。
 6. 阅读提示：提词画面齿轮中可调整当前字颜色及 0%～15% 放大；设置会自动保存。
 
-许可证与原作者署名见 LICENSE（许可证）文件。
+开源许可证、上游作者署名和本产品定制部分署名见 LICENSE（许可证）文件。
 "@
   [IO.File]::WriteAllText((Join-Path $stage '使用说明.txt'), $instructions, [Text.UTF8Encoding]::new($true))
   $manifest = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Sort-Object FullName | ForEach-Object {
@@ -113,13 +120,15 @@ BK103（智能提词器）$Version
   $sourceCommit = (git -C $projectRoot rev-parse HEAD).Trim()
   if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the source commit.' }
   $summary = [pscustomobject]@{
-    product = 'BK103'
+    product = 'BK 提词器'
+    creator = '陈林'
+    contactEmail = 'beyond.chenlin@gmail.com'
     version = $Version
     sourceCommit = $sourceCommit
     modelIncluded = $modelFiles.Count -gt 0
     files = $manifest
   }
-  [IO.File]::WriteAllText((Join-Path $stage 'BK103-manifest.json'), ($summary | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText((Join-Path $stage 'BK 提词器-manifest.json'), ($summary | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
   Compress-Archive -LiteralPath $stage -DestinationPath $temporaryArchive -CompressionLevel Optimal
   $archiveHash = (Get-FileHash -LiteralPath $temporaryArchive -Algorithm SHA256).Hash.ToLowerInvariant()
   [IO.File]::WriteAllText($temporaryChecksum, "$archiveHash  $packageName.zip`n", [Text.UTF8Encoding]::new($false))
@@ -131,7 +140,7 @@ BK103（智能提词器）$Version
   [IO.File]::Move($temporaryChecksum, $checksumFile)
   $publishedPaths.Add($checksumFile)
   [pscustomobject]@{
-    product = 'BK103'
+    product = 'BK 提词器'
     version = $Version
     archive = $archive
     archiveBytes = (Get-Item -LiteralPath $archive).Length
