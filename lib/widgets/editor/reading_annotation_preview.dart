@@ -10,6 +10,7 @@ import '../../models/reading_annotation.dart';
 import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
 import '../../services/text_parser.dart';
+import '../../utils/constants.dart';
 import '../teleprompter/reading_emphasis_text.dart';
 import '../teleprompter/reading_annotation_layer.dart';
 
@@ -269,8 +270,19 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       // top padding. Preview it using this viewport's own reading-line padding.
       final ratio = _settings.readingLineOffset > 0
           ? _settings.readingLineOffset.clamp(0.0, 1.0)
-          : .5;
-      return math.min(cap, math.max(widget.height * .1, widget.height * ratio));
+          : width < LayoutConstants.compactBreakpoint
+          ? TeleprompterConstants.readingLineRatioMobile
+          : TeleprompterConstants.readingLineRatioDesktop;
+      var padding = widget.height * TeleprompterConstants.topPaddingVh / 100;
+      if (!_settings.isContinuousScroll) {
+        final inset = math.min(widget.height / 2, geometry.emptyHeight / 2 + 4);
+        final readingLine = (widget.height * ratio).clamp(
+          inset,
+          math.max(inset, widget.height - inset),
+        );
+        padding = math.max(padding, readingLine);
+      }
+      return math.min(cap, padding + 2);
     }
     if (preceding.characters.isEmpty) return math.min(cap, geometry.emptyHeight + 4);
     if (_precedingLayout?.geometry != geometry ||

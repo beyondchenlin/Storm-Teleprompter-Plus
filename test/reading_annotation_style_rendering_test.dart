@@ -285,4 +285,24 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
+
+  testWidgets('匀速预览首行只使用实际视口顶部留白，不借用阅读线位置', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(
+      body: ReadingAnnotationPreview(
+        content: 'ABCDEFGH',
+        annotations: [_note],
+        height: 190,
+        settings: AppSettings(
+          fontSize: 64,
+          autoScrollMode: AutoScrollMode.continuous,
+          readingLineOffset: .9,
+          annotationFontSize: 36,
+        ),
+      ),
+    )));
+    final line = tester.widget<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine));
+    expect(line.annotationLeadingSpace, closeTo(190 * .3 + 2, .001));
+    expect(line.presentation.continuous, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
