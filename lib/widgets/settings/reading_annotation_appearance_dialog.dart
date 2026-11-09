@@ -163,6 +163,7 @@ class _ReadingAnnotationAppearanceDialogState
               ChoiceChip(
                 key: ValueKey('annotation-size-${preset.$2.round()}'),
                 label: Text(preset.$1),
+                showCheckmark: false,
                 selected: _settings.annotationFontSize == preset.$2,
                 onSelected: (_) =>
                     _update(_settings.copyWith(annotationFontSize: preset.$2)),
@@ -181,11 +182,14 @@ class _ReadingAnnotationAppearanceDialogState
             _settings.copyWith(annotationFontSize: value.roundToDouble()),
           ),
         ),
-        Text(
-          automatic
-              ? '自动按正文的 22% 显示；拖动滑块可指定 8–36 像素。'
-              : '这是首选字号；行间空间不足时自动缩小，正文行距保持不变。',
-          style: Theme.of(context).textTheme.bodySmall,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 36),
+          child: Text(
+            automatic
+                ? '自动按正文的 22% 显示；拖动滑块可指定 8–36 像素。'
+                : '这是首选字号；行间空间不足时自动缩小，正文行距保持不变。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ),
         const SizedBox(height: 18),
         const Text('批注颜色', style: TextStyle(fontWeight: FontWeight.w600)),
