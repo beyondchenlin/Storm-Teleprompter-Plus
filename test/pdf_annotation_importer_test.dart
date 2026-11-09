@@ -189,7 +189,14 @@ void main() {
 
       final failed = importPdf(fixture('pdf_invalid_synthetic.pdf'));
       final next = importPdf(fixture('pdf_plain_synthetic.pdf'));
-      await expectLater(failed, throwsA(isA<PdfImportException>()));
+      await expectLater(
+        failed,
+        throwsA(isA<PdfImportException>().having(
+          (error) => error.message,
+          'corrupt-file explanation',
+          contains('不是有效文档'),
+        )),
+      );
       expect(AnnotationAnchors.bodyText((await next).content), '普通稿件，不含批注。');
     });
   });

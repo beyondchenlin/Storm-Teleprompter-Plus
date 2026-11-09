@@ -12,9 +12,12 @@ import 'import_batch.dart';
 import 'pdf_annotation_geometry.dart';
 
 class PdfImportException implements Exception {
-  const PdfImportException(this.message);
+  const PdfImportException(this.message, {this.nativeCode});
 
   final String message;
+  /// Preserved for diagnostics; never infer a password error from an unknown
+  /// code or from a search for an /Encrypt token in arbitrary file bytes.
+  final int? nativeCode;
 
   @override
   String toString() => message;
@@ -64,6 +67,11 @@ ImportedArticleDraft _importPdfInWorker(String path) {
   final data = calloc<Uint8>(bytes.length);
   try {
     data.asTypedList(bytes.length).setAll(0, bytes);
+    // The generated 0.2.1 binding resolves this symbol lazily. On Windows,
+    // PDFium uses the OS thread's GetLastError slot, so doing the first symbol
+    // lookup AFTER a failed load can overwrite its error. Resolve it before
+    // loading and capture the result immediately, before other native calls.
+    pdfium.FPDF_GetLastError();
     // Loading bytes, rather than a narrow C file path, also supports Chinese
     // filenames on Windows without depending on the active system code page.
     final document = pdfium.FPDF_LoadMemDocument64(
@@ -71,8 +79,9 @@ ImportedArticleDraft _importPdfInWorker(String path) {
       bytes.length,
       nullptr,
     );
+    final loadError = pdfium.FPDF_GetLastError();
     if (document == nullptr) {
-      throw PdfImportException(_documentError(pdfium.FPDF_GetLastError()));
+      throw PdfImportException(_documentError(loadError), nativeCode: loadError);
     }
     try {
       // Bit 5 is the document's copy/extract permission. Unencrypted documents
@@ -96,7 +105,8 @@ String _documentError(int code) => switch (code) {
   4 => '文件已加密，需要先在原软件中输入密码并另存为可读取的文件。',
   5 => '文件采用了不支持的加密保护，请在原软件中解除保护后再导入。',
   6 => '文档页面无法解析，请在原软件中重新保存后再导入。',
-  _ => '文档解析失败，请在原软件中确认文件能够正常打开后再导入。',
+  _ => '文档解析失败，解析组件未提供可识别的原因。请检查文件是否需要密码或已经损坏，'
+      '并在原软件中重新保存后再导入。',
 };
 
 ImportedArticleDraft _readDocument(
