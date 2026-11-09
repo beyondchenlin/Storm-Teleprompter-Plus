@@ -450,7 +450,10 @@ class ReadingAnnotationLayout {
         }
         final rise = math.min(
           availableRise,
-          math.max(minimumRise, fontSize * .75),
+          // A larger preferred label must not turn the accepted short leader
+          // into a long diagonal or push a fitting label past the margin.
+          // Keep the leader tied to the body while keeping its 17.5° angle.
+          math.max(minimumRise, math.min(fontSize, anchor.bodyFontSize * .22) * .75),
         );
         final run =
             rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);

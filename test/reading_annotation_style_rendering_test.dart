@@ -115,6 +115,20 @@ void main() {
     expect(custom.notes.displayStatus().hiddenLabelCount, 0);
   });
 
+  test('放大批注字体不会连带拉长引线，整块备注与词框仍以中心相连', () {
+    final automatic = _layout(style: const ReadingAnnotationStyle());
+    final large = _layout(style: const ReadingAnnotationStyle(fontSize: 36));
+    final original = automatic.notes.rowAt(0).labels.single;
+    final enlarged = large.notes.rowAt(0).labels.single;
+    expect(enlarged.painter.text!.style!.fontSize, 36);
+    expect(enlarged.tail, enlarged.rect.bottomCenter);
+    expect(enlarged.tip, enlarged.anchor.frame.topCenter);
+    expect(
+      (enlarged.tip - enlarged.tail).distance,
+      closeTo((original.tip - original.tail).distance, .001),
+    );
+  });
+
   test('大字号在固定留白内收敛，报告实际字号并保留完整原文与备注', () {
     const note = ReadingAnnotation(
       id: 'two-lines',
