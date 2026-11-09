@@ -16,6 +16,7 @@ import '../../models/app_settings.dart';
 import '../../utils/constants.dart';
 import 'asr_model_store.dart';
 import 'asr_preparation_exception.dart';
+import 'asr_recognition_event.dart';
 import 'pcm_resampler.dart';
 
 /// ASR 模型信息
@@ -342,6 +343,8 @@ class AsrService with ChangeNotifier {
   AudioRecorder? _previewRecorderInstance;
   StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<Uint8List>? _previewSubscription;
+  Future<void>? _stopOperation;
+  int _captureGeneration = 0;
   bool _isRunning = false;
   bool _isModelLoaded = false;
   bool _isReleased = false;
@@ -355,6 +358,10 @@ class AsrService with ChangeNotifier {
   void Function(String text)? onFinal;
   void Function(double rms)? onRms;
   void Function(Object error)? onError;
+  void Function(AsrRecognitionEvent event)? _onRecognitionEvent;
+  final AsrRecognitionSequencer _recognitionSequencer =
+      AsrRecognitionSequencer();
+  int _requestedRecognitionEpoch = 0;
 
   // ─── 下载状态跟踪 ──────────────────────────────────────
   final Map<String, DownloadProgress> _downloadProgress = {};
@@ -1358,10 +1365,18 @@ class AsrService with ChangeNotifier {
   Future<void> start({
     required void Function(String text) onPartialResult,
     required void Function(String text) onFinalResult,
+    void Function(AsrRecognitionEvent event)? onRecognitionEvent,
+    int recognitionEpoch = 0,
     void Function(double rms)? onRmsUpdate,
     String? inputDeviceId,
     void Function(Object error)? onError,
   }) async {
+    if (_isRunning) return;
+    // A manual anchor change can happen while the previous recorder is still
+    // stopping. Keep the latest request instead of restoring the start call's
+    // older epoch after that asynchronous cleanup.
+    _requestedRecognitionEpoch = recognitionEpoch;
+    await _stopOperation;
     if (_isRunning) return;
     if (!_isModelLoaded || _recognizer == null) {
       throw Exception('ASR 模型未加载');
@@ -1369,20 +1384,30 @@ class AsrService with ChangeNotifier {
 
     onPartial = onPartialResult;
     onFinal = onFinalResult;
+    _onRecognitionEvent = onRecognitionEvent;
+    _recognitionSequencer.reset(_requestedRecognitionEpoch);
     onRms = onRmsUpdate;
     this.onError = onError;
+    final captureGeneration = ++_captureGeneration;
 
     try {
       _stream = _recognizer!.createStream();
-      if (!await _recorder.hasPermission(request: true)) {
+      final hasPermission = await _recorder.hasPermission(request: true);
+      _checkCaptureGeneration(captureGeneration);
+      if (!hasPermission) {
         throw StateError('没有麦克风权限，无法启动语音识别');
       }
-      if (!await _recorder.isEncoderSupported(AudioEncoder.pcm16bits)) {
+      final supportsEncoder = await _recorder.isEncoderSupported(
+        AudioEncoder.pcm16bits,
+      );
+      _checkCaptureGeneration(captureGeneration);
+      if (!supportsEncoder) {
         throw UnsupportedError('当前平台不支持 PCM16 麦克风流');
       }
       InputDevice? inputDevice;
       if (inputDeviceId != null && inputDeviceId.isNotEmpty) {
         final devices = await _recorder.listInputDevices();
+        _checkCaptureGeneration(captureGeneration);
         for (final candidate in devices) {
           if (candidate.id == inputDeviceId) {
             inputDevice = candidate;
@@ -1397,6 +1422,7 @@ class AsrService with ChangeNotifier {
       _captureNumChannels = Platform.isWindows ? 2 : 1;
       _resampler.reset();
       await _recorder.setOnConfigChanged((config) {
+        if (captureGeneration != _captureGeneration) return;
         _captureSampleRate = config.sampleRate;
         _captureNumChannels = config.numChannels;
         _resampler.reset();
@@ -1405,6 +1431,7 @@ class AsrService with ChangeNotifier {
           '${config.sampleRate} Hz, ${config.numChannels} channel(s)',
         );
       });
+      _checkCaptureGeneration(captureGeneration);
       debugPrint(
         '[AsrService] ASR 麦克风启动: ${inputDevice?.label ?? '系统默认'}, '
         'sampleRate=$_captureSampleRate, channels=$_captureNumChannels, '
@@ -1423,24 +1450,61 @@ class AsrService with ChangeNotifier {
           device: inputDevice,
         ),
       );
+      _checkCaptureGeneration(captureGeneration);
       _isRunning = true;
-      _audioSubscription = audioStream.listen(
-        _processPcm16Chunk,
+      final subscription = audioStream.listen(
+        (bytes) {
+          if (captureGeneration != _captureGeneration || !_isRunning) return;
+          try {
+            _processPcm16Chunk(bytes);
+          } catch (error, stackTrace) {
+            _failCapture(captureGeneration, error, stackTrace);
+          }
+        },
         onError: (Object error, StackTrace stackTrace) {
-          debugPrint('[AsrService] 麦克风音频流错误: $error');
-          this.onError?.call(error);
-          unawaited(stop());
+          _failCapture(captureGeneration, error, stackTrace);
+        },
+        onDone: () {
+          _failCapture(
+            captureGeneration,
+            StateError('麦克风音频流已结束'),
+            StackTrace.current,
+          );
         },
       );
+      if (captureGeneration != _captureGeneration || !_isRunning) {
+        await subscription.cancel();
+        _checkCaptureGeneration(captureGeneration);
+      }
+      _audioSubscription = subscription;
 
       debugPrint('[AsrService] ASR 识别已启动');
     } catch (e) {
-      _isRunning = false;
-      _stream?.free();
-      _stream = null;
+      if (captureGeneration == _captureGeneration) await stop();
       debugPrint('[AsrService] ASR 启动失败: $e');
       rethrow;
     }
+  }
+
+  void _checkCaptureGeneration(int generation) {
+    if (generation != _captureGeneration) {
+      throw StateError('语音采集启动已取消');
+    }
+  }
+
+  void _failCapture(int generation, Object error, StackTrace stackTrace) {
+    if (generation != _captureGeneration || !_isRunning) return;
+    debugPrint('[AsrService] 麦克风音频流中断: $error\n$stackTrace');
+    // Stop invalidates the subscription before notifying the backend. A late
+    // error or onDone from this capture can never cancel a subsequent retry.
+    final listener = onError;
+    final stopping = stop();
+    try {
+      listener?.call(error);
+    } catch (callbackError, callbackStack) {
+      debugPrint('[AsrService] 语音错误通知失败: $callbackError\n$callbackStack');
+    }
+    unawaited(stopping);
   }
 
   void _processPcm16Chunk(Uint8List bytes) {
@@ -1493,6 +1557,9 @@ class AsrService with ChangeNotifier {
   /// [samples] 16kHz 采样率的 Float32 音频数据
   void processAudioSamples(Float32List samples) {
     if (!_isRunning || _recognizer == null || _stream == null) return;
+    if (samples.isEmpty) return;
+    final recognizer = _recognizer!;
+    final stream = _stream!;
 
     // 计算 RMS 音量
     double sumSquares = 0;
@@ -1502,43 +1569,96 @@ class AsrService with ChangeNotifier {
     }
     final rms = sqrt(sumSquares / samples.length);
     onRms?.call(rms);
+    if (!_isRunning ||
+        !identical(_stream, stream) ||
+        !identical(_recognizer, recognizer)) {
+      return;
+    }
 
     // 送入识别器
-    _stream!.acceptWaveform(samples: samples, sampleRate: 16000);
+    stream.acceptWaveform(samples: samples, sampleRate: 16000);
 
     // 持续解码
-    while (_recognizer!.isReady(_stream!)) {
-      _recognizer!.decode(_stream!);
+    while (recognizer.isReady(stream)) {
+      recognizer.decode(stream);
     }
 
     // 获取中间结果
-    final result = _recognizer!.getResult(_stream!);
-    if (result.text.isNotEmpty) {
-      onPartial?.call(result.text);
-    }
-
-    // 端点检测 —— 说话停顿后触发 onFinal 回调
-    if (_recognizer!.isEndpoint(_stream!)) {
-      final text = result.text.trim();
-      if (text.isNotEmpty) {
-        onFinal?.call(text);
+    final result = recognizer.getResult(stream);
+    final isFinal = recognizer.isEndpoint(stream);
+    final event = _recognitionSequencer.update(result.text, isFinal: isFinal);
+    if (event != null) {
+      final listener = _onRecognitionEvent;
+      if (listener != null) {
+        listener(event);
+      } else if (isFinal) {
+        onFinal?.call(event.text);
+      } else {
+        onPartial?.call(event.text);
       }
-      _recognizer!.reset(_stream!);
+    }
+    // A callback may synchronously choose another position. Do not reset or
+    // access the replaced stream after delivering its final event.
+    if (isFinal && _isRunning && identical(_stream, stream)) {
+      recognizer.reset(stream);
     }
   }
 
-  /// 停止语音识别
-  Future<void> stop() async {
-    if (!_isRunning) return;
-    _isRunning = false;
-
-    await _audioSubscription?.cancel();
-    _audioSubscription = null;
-    await _recorder.stop();
+  /// Discard the accumulated utterance after an explicit reading-position
+  /// change. A fresh stream also drops pending decoder context from that place.
+  void resetRecognition({required int epoch}) {
+    _requestedRecognitionEpoch = epoch;
+    _recognitionSequencer.reset(epoch);
     _resampler.reset();
+    final recognizer = _recognizer;
+    if (recognizer == null || _stream == null) return;
+    final replacement = recognizer.createStream();
+    final previous = _stream;
+    _stream = replacement;
+    previous?.free();
+  }
 
-    _stream?.free();
+  /// 停止语音识别
+  Future<void> stop() {
+    final active = _stopOperation;
+    if (active != null) return active;
+    if (!_isRunning && _audioSubscription == null && _stream == null) {
+      return Future<void>.value();
+    }
+    _isRunning = false;
+    _captureGeneration++;
+    final subscription = _audioSubscription;
+    final stream = _stream;
+    _audioSubscription = null;
     _stream = null;
+    final operation = _stopCapture(subscription, stream);
+    _stopOperation = operation;
+    return operation.whenComplete(() {
+      if (identical(_stopOperation, operation)) _stopOperation = null;
+    });
+  }
+
+  Future<void> _stopCapture(
+    StreamSubscription<Uint8List>? subscription,
+    sherpa.OnlineStream? stream,
+  ) async {
+    try {
+      try {
+        await subscription?.cancel();
+      } catch (error, stackTrace) {
+        debugPrint('[AsrService] 取消音频订阅失败: $error\n$stackTrace');
+      }
+      try {
+        await _recorderInstance?.stop();
+      } catch (error, stackTrace) {
+        // A removed device can reject stop. Its subscription and decoder still
+        // belong to this operation and must be released before a retry starts.
+        debugPrint('[AsrService] 停止麦克风失败: $error\n$stackTrace');
+      }
+    } finally {
+      _resampler.reset();
+      stream?.free();
+    }
 
     debugPrint('[AsrService] ASR 识别已停止');
   }

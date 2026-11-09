@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/app_settings.dart';
 import '../services/asr/asr_preparation_exception.dart';
+import '../services/asr/asr_recognition_event.dart';
 
 import '../services/asr/alignment_engine.dart';
 import '../services/asr/asr_transcript_normalizer.dart';
@@ -14,6 +15,8 @@ import 'ws_protocol.dart';
 import 'ws_server.dart';
 
 enum AsrSessionStatus { idle, loading, running, paused, error }
+
+enum AsrFollowState { listening, following, waiting }
 
 /// Owns recognition for the backend. UI clients only receive processed data.
 typedef AsrPositionChanged =
@@ -29,24 +32,6 @@ class AsrSessionService {
        _initializeBindings = initializeBindings ?? AsrService.init;
 
   static const unloadDelay = Duration(seconds: 20);
-  static const int maxPartialAdvance = 4;
-  static const int maxFinalAdvance = 6;
-
-  static int limitAdvance({
-    required int currentIndex,
-    required int requestedIndex,
-    required bool isFinal,
-  }) {
-    if (requestedIndex < 0 ||
-        currentIndex < 0 ||
-        requestedIndex <= currentIndex) {
-      return requestedIndex;
-    }
-    final maxAdvance = isFinal ? maxFinalAdvance : maxPartialAdvance;
-    return requestedIndex
-        .clamp(currentIndex, currentIndex + maxAdvance)
-        .toInt();
-  }
 
   final SettingsService _settingsService;
   final AsrPositionChanged _onCurrentIndexChanged;
@@ -59,6 +44,13 @@ class AsrSessionService {
   Future<void>? _startOperation;
   Future<void>? _pauseOperation;
   int _startGeneration = 0;
+  int _recognitionEpoch = 0;
+  int _anchorRevision = 0;
+  int _lastSegmentId = -1;
+  int _lastEventRevision = -1;
+  String? _lastEventText;
+  bool _segmentFinal = false;
+  final AsrRecognitionSequencer _legacySequencer = AsrRecognitionSequencer();
   String _articleId = '';
   String _transcript = '';
   String _committedTranscript = '';
@@ -66,12 +58,17 @@ class AsrSessionService {
   double _rms = 0;
   int _currentIndex = -1;
   AsrSessionStatus _status = AsrSessionStatus.idle;
+  AsrFollowState _followState = AsrFollowState.listening;
   String? _error;
   String? _message;
 
   AsrSessionStatus get status => _status;
   String? get error => _error;
   String? get message => _message;
+  AsrFollowState get followState => _followState;
+  int get currentIndex => _currentIndex;
+  int get anchorRevision => _anchorRevision;
+  String get transcript => _transcript;
   String? _loadedConfigKey;
   DateTime? _lastRmsBroadcastAt;
 
@@ -96,27 +93,68 @@ class AsrSessionService {
   }) {
     _articleId = articleId;
     _currentIndex = currentIndex;
+    _anchorRevision = 0;
     _transcript = '';
     _committedTranscript = '';
     _partialTranscript = '';
     _rms = 0;
     _error = null;
-    final alignmentText = TextParser.isHtml(content)
-        ? TextParser.parse(
-            content,
-          ).expand((line) => line.characters).map((char) => char.char).join()
-        : content;
+    final parsedLines = TextParser.isHtml(content)
+        ? TextParser.parse(content)
+        : null;
+    final alignmentText = parsedLines == null
+        ? content
+        : parsedLines
+              .expand((line) => line.characters)
+              .map((char) => char.char)
+              .join();
+    // HTML block breaks do not occupy a displayed raw character index. Pass
+    // their positions separately; inserting '\n' would shift every later cue.
+    final boundaries = parsedLines
+        ?.where((line) => line.characters.isNotEmpty)
+        .map((line) => line.characters.first.rawIndex);
     _alignment
-      ..setScript(alignmentText)
+      ..setScript(alignmentText, sentenceBoundaries: boundaries ?? const [])
       ..setCurrentIndex(currentIndex);
+    _beginRecognitionEpoch(resetNative: true);
     _broadcastStatus();
   }
 
-  /// 手动或自动移动当前字后，同步覆盖对齐锚点。
-  void setCurrentIndex(int currentIndex) {
+  /// Explicit position changes start a new recognition epoch. Ordinary status
+  /// synchronization at the same position must not discard a live utterance.
+  void setCurrentIndex(int currentIndex, {int? anchorRevision}) {
     if (_articleId.isEmpty) return;
+    if (anchorRevision != null && anchorRevision < _anchorRevision) return;
+    final revisionChanged =
+        anchorRevision != null && anchorRevision != _anchorRevision;
+    if (!revisionChanged && currentIndex == _currentIndex) return;
+    if (anchorRevision != null) _anchorRevision = anchorRevision;
     _currentIndex = currentIndex;
     _alignment.setCurrentIndex(currentIndex);
+    _beginRecognitionEpoch(resetNative: true);
+    _broadcastStatus();
+  }
+
+  void _beginRecognitionEpoch({required bool resetNative}) {
+    _recognitionEpoch++;
+    _legacySequencer.reset(_recognitionEpoch);
+    _lastSegmentId = -1;
+    _lastEventRevision = -1;
+    _lastEventText = null;
+    _segmentFinal = false;
+    _partialTranscript = '';
+    _transcript = _committedTranscript;
+    _followState = AsrFollowState.listening;
+    // A recorder can be waiting for permissions while its decoder stream
+    // already exists. Reset that stream too, before isRunning becomes true.
+    if (resetNative && _asr.isModelLoaded) {
+      try {
+        _asr.resetRecognition(epoch: _recognitionEpoch);
+      } catch (error) {
+        _handleRecognizerError(error);
+        unawaited(_asr.stop());
+      }
+    }
   }
 
   Future<void> pause() {
@@ -131,6 +169,8 @@ class AsrSessionService {
 
   Future<void> _pauseInternal() async {
     _startGeneration++;
+    _beginRecognitionEpoch(resetNative: false);
+    _alignment.setCurrentIndex(_currentIndex);
     final startOperation = _startOperation;
     if (_status == AsrSessionStatus.loading) await _asr.cancelDownload();
     if (startOperation != null) {
@@ -257,15 +297,28 @@ class AsrSessionService {
       }
       _checkStartGeneration(generation);
       phase = 'microphone';
+      _beginRecognitionEpoch(resetNative: false);
+      _alignment.setCurrentIndex(_currentIndex);
       _message = '正在启动麦克风…';
       _broadcastStatus();
+      final callbackEpoch = _recognitionEpoch;
       await _asr.start(
         onPartialResult: (text) {
-          if (generation == _startGeneration) _handleTranscript(text, false);
+          if (generation == _startGeneration &&
+              callbackEpoch == _recognitionEpoch) {
+            _handleLegacyTranscript(text, false);
+          }
         },
         onFinalResult: (text) {
-          if (generation == _startGeneration) _handleTranscript(text, true);
+          if (generation == _startGeneration &&
+              callbackEpoch == _recognitionEpoch) {
+            _handleLegacyTranscript(text, true);
+          }
         },
+        onRecognitionEvent: (event) {
+          if (generation == _startGeneration) _handleRecognitionEvent(event);
+        },
+        recognitionEpoch: callbackEpoch,
         onRmsUpdate: (value) {
           if (generation == _startGeneration) _handleRms(value);
         },
@@ -326,9 +379,44 @@ class AsrSessionService {
     );
   }
 
-  void _handleTranscript(String text, bool isFinal) {
-    final trimmed = normalizeAsrTranscript(text.trim());
-    if (isFinal) {
+  void _handleLegacyTranscript(String text, bool isFinal) {
+    final event = _legacySequencer.update(text, isFinal: isFinal);
+    if (event != null) _handleRecognitionEvent(event);
+  }
+
+  void _handleRecognitionEvent(AsrRecognitionEvent event) {
+    if (event.epoch != _recognitionEpoch ||
+        event.segmentId < 0 ||
+        event.revision <= 0 ||
+        event.segmentId < _lastSegmentId) {
+      return;
+    }
+    if (event.segmentId == _lastSegmentId &&
+        (_segmentFinal || event.revision <= _lastEventRevision)) {
+      return;
+    }
+    if (event.segmentId != _lastSegmentId) {
+      // Normally the native recognizer always closes its previous segment.
+      // If a transport drops that final event, never reuse its cumulative
+      // transcript as the starting point of a different utterance.
+      if (_lastSegmentId >= 0 && !_segmentFinal) {
+        _alignment.setCurrentIndex(_currentIndex);
+        _committedTranscript = appendAsrTranscript(
+          _committedTranscript,
+          _partialTranscript,
+        );
+      }
+      _lastSegmentId = event.segmentId;
+      _lastEventRevision = -1;
+      _lastEventText = null;
+      _segmentFinal = false;
+    }
+    _lastEventRevision = event.revision;
+    final trimmed = normalizeAsrTranscript(event.text);
+    if (!event.isFinal && trimmed == _lastEventText) return;
+    _lastEventText = trimmed;
+    _segmentFinal = event.isFinal;
+    if (event.isFinal) {
       if (trimmed.isNotEmpty) {
         _committedTranscript = appendAsrTranscript(
           _committedTranscript,
@@ -343,13 +431,15 @@ class AsrSessionService {
       _committedTranscript,
       _partialTranscript,
     );
-    final result = _alignment.consumeTranscript(trimmed, isFinal);
-    final alignedIndex = limitAdvance(
-      currentIndex: _currentIndex,
-      requestedIndex: result.index,
-      isFinal: isFinal,
-    );
+    final result = _alignment.consumeTranscript(trimmed, event.isFinal);
+    final alignedIndex = result.index;
+    _followState = result.meta.isWaiting
+        ? AsrFollowState.waiting
+        : result.meta.matchedLength > 0
+        ? AsrFollowState.following
+        : AsrFollowState.listening;
     if (alignedIndex >= 0 &&
+        alignedIndex != _currentIndex &&
         (alignedIndex >= _currentIndex || result.meta.allowBackward)) {
       _currentIndex = alignedIndex;
       _onCurrentIndexChanged(
@@ -363,7 +453,10 @@ class AsrSessionService {
         data: {
           ..._statusData(),
           'segment': trimmed,
-          'isFinal': isFinal,
+          'isFinal': event.isFinal,
+          'recognitionEpoch': event.epoch,
+          'segmentId': event.segmentId,
+          'segmentRevision': event.revision,
           'allowBackward': result.meta.allowBackward,
         },
       ),
@@ -387,12 +480,16 @@ class AsrSessionService {
           'status': _status.name,
           'rms': _rms,
           'currentIndex': _currentIndex,
+          'asrAnchorRevision': _anchorRevision,
+          'followState': _followState.name,
         },
       ),
     );
   }
 
   void _handleRecognizerError(Object error) {
+    _startGeneration++;
+    _recognitionEpoch++;
     _status = AsrSessionStatus.error;
     debugPrint('[AsrSessionService] 麦克风采集失败: $error');
     _message = null;
@@ -408,6 +505,8 @@ class AsrSessionService {
     'text': _transcript,
     'rms': _rms,
     'currentIndex': _currentIndex,
+    'asrAnchorRevision': _anchorRevision,
+    'followState': _followState.name,
     'error': ?_error,
     'message': _message,
   };
