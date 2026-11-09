@@ -342,12 +342,15 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
     if (!note.isAnchored) return;
     final range = note.ranges.first;
     final plain = quillController.document.toPlainText();
-    int editorOffset(int raw) {
+    int editorOffset(int raw, {bool endBoundary = false}) {
       var counted = 0;
       for (var i = 0; i < plain.length; i++) {
         if (plain[i] == '\n' || plain[i] == '\u2028') continue;
-        if (counted == raw) return i;
+        if (!endBoundary && counted == raw) return i;
         counted++;
+        // A range end stops before structural breaks. The same raw boundary
+        // used as a range start moves past them to the next visible character.
+        if (endBoundary && counted == raw) return i + 1;
       }
       return plain.length - 1;
     }
@@ -355,7 +358,7 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
     quillController.updateSelection(
       TextSelection(
         baseOffset: editorOffset(range.start),
-        extentOffset: editorOffset(range.end),
+        extentOffset: editorOffset(range.end, endBoundary: true),
       ),
       quill.ChangeSource.local,
     );
