@@ -248,10 +248,14 @@ function Assert-BKPdfiumRuntime {
   $files = @(Get-ChildItem -LiteralPath $BuildDirectory -Recurse -File -Filter $manifest.fileName)
   if ($files.Count -ne 1) { throw 'The release must contain exactly one bundled PDF parsing runtime.' }
   $file = $files[0]
+  $expectedPath = [IO.Path]::GetFullPath((Join-Path $BuildDirectory $manifest.fileName))
+  if ($file.FullName -ine $expectedPath) {
+    throw 'The PDF parsing runtime must be in the release root so the runtime manifest and installer include it.'
+  }
   $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($file.Length -ne $manifest.size -or $hash -cne $manifest.sha256) {
     throw 'The PDF parsing runtime does not match the pinned dependency and bundled licenses.'
   }
   Assert-BKPeX64 -Path $file.FullName
-  return [pscustomobject]@{revision=$manifest.revision; version=$manifest.version; sha256=$hash; size=$file.Length}
+  return [pscustomobject]@{path=$manifest.fileName; revision=$manifest.revision; version=$manifest.version; sha256=$hash; size=$file.Length}
 }

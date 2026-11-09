@@ -79,7 +79,7 @@ void main() {
         const TextSelection(baseOffset: 2, extentOffset: 3),
       );
       await tester.pump();
-      unawaited(editor.addAnnotation());
+      await tester.tap(find.byKey(const ValueKey('add-reading-annotation')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('annotation-text-input')),
