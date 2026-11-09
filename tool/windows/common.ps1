@@ -239,3 +239,19 @@ function Copy-BKVisualCRuntime {
     files = $copied
   }
 }
+
+
+function Assert-BKPdfiumRuntime {
+  param([string]$ProjectRoot, [string]$BuildDirectory)
+  $manifestPath = Join-Path $ProjectRoot 'tool\windows\pdfium-runtime.json'
+  $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+  $files = @(Get-ChildItem -LiteralPath $BuildDirectory -Recurse -File -Filter $manifest.fileName)
+  if ($files.Count -ne 1) { throw 'The release must contain exactly one bundled PDF parsing runtime.' }
+  $file = $files[0]
+  $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($file.Length -ne $manifest.size -or $hash -cne $manifest.sha256) {
+    throw 'The PDF parsing runtime does not match the pinned dependency and bundled licenses.'
+  }
+  Assert-BKPeX64 -Path $file.FullName
+  return [pscustomobject]@{revision=$manifest.revision; version=$manifest.version; sha256=$hash; size=$file.Length}
+}

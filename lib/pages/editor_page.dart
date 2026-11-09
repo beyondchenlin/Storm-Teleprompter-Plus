@@ -113,6 +113,8 @@ class EditorPageState extends State<EditorPage>
               alt: true,
             ): () =>
                 unawaited(quickStartTeleprompter()),
+            const SingleActivator(LogicalKeyboardKey.keyM, control: true, alt: true): () =>
+                unawaited(addAnnotation()),
             const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
                 showFindReplaceDialog(replaceMode: false),
             const SingleActivator(LogicalKeyboardKey.keyH, control: true): () =>
@@ -177,11 +179,25 @@ class EditorPageState extends State<EditorPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildFormatButton(
-          Icons.add_comment_outlined,
-          '给所选字词添加批注',
-          addAnnotation,
+        Tooltip(
+          message: '给所选字词添加批注',
+          child: SizedBox(
+            height: EditorToolbarStyle.buttonSize,
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('add-reading-annotation'),
+              onPressed: addAnnotation,
+              icon: const Icon(Icons.add_comment_outlined, size: 18),
+              label: const Text('添加批注'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+            ),
+          ),
         ),
+        const SizedBox(width: EditorToolbarStyle.spacing),
         _buildFormatButton(
           Icons.comment_outlined,
           '批注管理（${annotations.length}）',

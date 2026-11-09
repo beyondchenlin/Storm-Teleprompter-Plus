@@ -364,7 +364,10 @@ void main() {
   testWidgets('首行与上一人工行留白中的备注可直接点击，镜像后也不触发正文跳读', (tester) async {
     const text = 'abcdefgh\nijklmnop';
     final lines = TextParser.parsePlainText(text);
-    final annotations = [_note(text, 2, 3, '重读'), _note(text, 11, 12, '停顿')];
+    final annotations = [
+      _note(text, 2, 3, '重读\n放慢语速\n讲清楚'),
+      _note(text, 11, 12, '停顿\n吸气\n再继续'),
+    ];
     final controller = ScrollController();
     var seeks = 0;
     for (final mirror in [false, true]) {
@@ -392,9 +395,20 @@ void main() {
       expect(states, hasLength(2));
       for (final state in states) {
         final label = state.debugAnnotationLayout!.rowAt(0).labels.single;
-        expect(label.rect.center.dy, lessThan(0), reason: '必须实际点击正文盒以外的借位备注');
+        // Use the actually painted part above the body box. A multiline label
+        // can straddle y=0 while its overall centre remains inside the body.
+        final borrowedPart = Rect.fromLTRB(
+          label.rect.left,
+          label.rect.top,
+          label.rect.right,
+          math.min(0, label.rect.bottom),
+        );
+        expect(borrowedPart.isEmpty, isFalse);
+        final target = borrowedPart.center;
+        expect(target.dy, lessThan(0), reason: '必须实际点击正文盒以外的借位备注');
+        expect(label.rect.contains(target), isTrue);
         final box = state.context.findRenderObject()! as RenderBox;
-        await tester.tapAt(box.localToGlobal(label.rect.center));
+        await tester.tapAt(box.localToGlobal(target));
         await tester.pumpAndSettle();
         expect(find.byType(AlertDialog), findsOneWidget);
         expect(seeks, 0);

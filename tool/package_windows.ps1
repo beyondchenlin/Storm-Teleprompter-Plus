@@ -21,6 +21,7 @@ $release = Resolve-BKVersion -ProjectRoot $projectRoot -Version $Version -BuildN
 $buildDirectory = Join-Path $projectRoot 'build\windows\x64\runner\Release'
 $executable = Join-Path $buildDirectory 'BK 提词器.exe'
 Assert-BKExecutableBranding -Path $executable -Release $release
+[void](Assert-BKPdfiumRuntime -ProjectRoot $projectRoot -BuildDirectory $buildDirectory)
 
 $receiptPath = Join-Path $buildDirectory 'bk-build-receipt.json'
 if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
@@ -86,6 +87,8 @@ try {
   foreach ($name in @('Apache-2.0.txt', 'ChineseModel-README.md', 'ChineseModel-SOURCE.txt', 'model-license-source.json')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('windows\vendor\' + $name)) -Destination $notices
   }
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows\vendor\pdfium') -Destination (Join-Path $notices 'pdfium') -Recurse
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\pdf-import-notices.md') -Destination $notices
   $modelDestination = Join-Path $stage ('bundled_models\' + $model.modelId)
   [IO.Directory]::CreateDirectory($modelDestination) | Out-Null
   foreach ($entry in $model.files) {
