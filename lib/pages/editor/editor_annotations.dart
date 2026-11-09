@@ -107,37 +107,87 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
 
   Widget buildAnnotationWorkspace(Widget editor) => LayoutBuilder(
     builder: (context, constraints) {
-      if (_annotations.isEmpty || !showAnnotationPreview) return editor;
-      if (constraints.maxWidth >= 1040 && constraints.maxHeight >= 300) {
-        return Row(
-          children: [
-            Expanded(child: editor),
-            const VerticalDivider(width: 1),
-            SizedBox(width: 440, child: _annotationPreviewPanel()),
-          ],
-        );
-      }
-      if (constraints.maxHeight >= 380) {
-        return Column(
-          children: [
-            Expanded(child: editor),
-            const Divider(height: 1),
-            SizedBox(height: 230, child: _annotationPreviewPanel()),
-          ],
-        );
-      }
+      final compactAfterApply =
+          !(constraints.maxWidth >= 1040 && constraints.maxHeight >= 300) &&
+          constraints.maxHeight < 380;
       return Column(
         children: [
-          Expanded(child: editor),
-          TextButton.icon(
-            onPressed: _showCompactAnnotationPreview,
-            icon: const Icon(Icons.preview_outlined),
-            label: Text('查看 ${_annotations.length} 条批注的提词效果'),
+          if (hasSmallAnnotationFontSize)
+            Container(
+              key: const ValueKey('annotation-font-size-notice'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '文档字号较小，备注文字未展开。\n'
+                      '使用提词字号将作用于整篇正文，保留其他样式和批注；可撤销。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.tonal(
+                    key: const ValueKey('use-teleprompter-font-size'),
+                    onPressed: () {
+                      useTeleprompterFontSize();
+                      setState(() => showAnnotationPreview = true);
+                      if (compactAfterApply) {
+                        unawaited(_showCompactAnnotationPreview());
+                      }
+                    },
+                    child: const Text('使用提词字号'),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, available) =>
+                  _annotationWorkspaceContent(editor, available),
+            ),
           ),
         ],
       );
     },
   );
+
+  Widget _annotationWorkspaceContent(Widget editor, BoxConstraints constraints) {
+    if (_annotations.isEmpty || !showAnnotationPreview) return editor;
+    if (constraints.maxWidth >= 1040 && constraints.maxHeight >= 300) {
+      return Row(
+        children: [
+          Expanded(child: editor),
+          const VerticalDivider(width: 1),
+          SizedBox(width: 440, child: _annotationPreviewPanel()),
+        ],
+      );
+    }
+    if (constraints.maxHeight >= 380) {
+      return Column(
+        children: [
+          Expanded(child: editor),
+          const Divider(height: 1),
+          SizedBox(height: 230, child: _annotationPreviewPanel()),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        Expanded(child: editor),
+        TextButton.icon(
+          onPressed: _showCompactAnnotationPreview,
+          icon: const Icon(Icons.preview_outlined),
+          label: Text('查看 ${_annotations.length} 条批注的提词效果'),
+        ),
+      ],
+    );
+  }
 
   Future<void> _showCompactAnnotationPreview() async {
     final note = _focusedPreviewNote;

@@ -62,7 +62,9 @@ class _HomeImportOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  isImporting ? '正在保留原目录层级' : '支持批量拖放 · 保留目录层级 · TXT / DOCX',
+                  isImporting
+                      ? '正在保留原目录层级'
+                      : '支持批量拖放 · 保留目录层级 · 纯文本、文字文档、便携式文档',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,

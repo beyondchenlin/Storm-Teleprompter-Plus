@@ -17,6 +17,9 @@ mixin EditorLogic on State<EditorPage> {
   Article? _savedArticle;
   List<ReadingAnnotation> _annotations = const [];
   List<ReadingAnnotation> get annotations => List.unmodifiable(_annotations);
+  String? _annotationFontNoticeContent;
+  List<ReadingAnnotation>? _annotationFontNoticeNotes;
+  bool _annotationFontNotice = false;
   String? _saveFolderId;
   bool _discardOnDispose = false;
 
@@ -610,6 +613,87 @@ mixin EditorLogic on State<EditorPage> {
       quill.Attribute.fromKeyValue(quill.Attribute.size.key, parsed)!,
     );
     _onQuillContentChanged();
+  }
+
+  /// Only warn when an actual annotation range is entirely inside text whose
+  /// explicit size makes its 22% note smaller than the 8px readability limit.
+  /// A small, unrelated footer must not prompt a manuscript-wide change.
+  bool get hasSmallAnnotationFontSize {
+    final content = contentController.text;
+    if (_annotationFontNoticeContent == content &&
+        identical(_annotationFontNoticeNotes, _annotations)) {
+      return _annotationFontNotice;
+    }
+    _annotationFontNoticeContent = content;
+    _annotationFontNoticeNotes = _annotations;
+    _annotationFontNotice = false;
+    final ranges = [
+      for (final note in _annotations)
+        if (note.isAnchored) ...note.ranges,
+    ]..sort((left, right) => left.start.compareTo(right.start));
+    if (ranges.isEmpty) return false;
+
+    final smallSpans = <({int start, int end})>[];
+    int? start;
+    var end = 0;
+    void finish() {
+      if (start case final int first) {
+        smallSpans.add((start: first, end: end));
+      }
+      start = null;
+    }
+
+    for (final line in TextParser.parse(content)) {
+      for (final character in line.characters) {
+        final size = character.fontSizePx;
+        if (size != null && size > 0 && size * .22 < 8) {
+          if (start != null && character.rawIndex != end) finish();
+          start ??= character.rawIndex;
+          end = character.rawIndex + character.char.length;
+        } else {
+          finish();
+        }
+      }
+    }
+    finish();
+    var index = 0;
+    for (final range in ranges) {
+      while (index < smallSpans.length &&
+          smallSpans[index].end <= range.start) {
+        index++;
+      }
+      if (index == smallSpans.length) break;
+      final span = smallSpans[index];
+      if (range.start >= span.start &&
+          range.end > range.start &&
+          range.end <= span.end) {
+        _annotationFontNotice = true;
+        break;
+      }
+    }
+    return _annotationFontNotice;
+  }
+
+  /// One explicit, undoable size-only operation over the whole manuscript.
+  /// Keeping the existing document also keeps the user's selection and notes.
+  void useTeleprompterFontSize() {
+    final length = quillController.document.length - 1;
+    if (length <= 0) return;
+    final size = quill.Attribute.fromKeyValue(quill.Attribute.size.key, null)!;
+    final history = quillController.document.history;
+    // Do not merge this document-wide action with adjacent typing.
+    history.lastRecorded = 0;
+    try {
+      quillController.formatText(0, length, size);
+      if (quillController.toggledStyle.attributes.containsKey(size.key)) {
+        quillController.forceToggledStyle(
+          quillController.toggledStyle.put(size),
+        );
+      }
+      _onQuillContentChanged();
+    } finally {
+      history.lastRecorded = 0;
+    }
   }
 
   void showFindReplaceDialog({required bool replaceMode}) {
