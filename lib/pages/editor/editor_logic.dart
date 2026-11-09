@@ -87,9 +87,7 @@ mixin EditorLogic on State<EditorPage> {
     // offsets now, before a selection notification or title-only save can
     // mistake removal of structural newlines for edits to annotated words.
     final originalContent = contentController.text;
-    final initialHtml = _deltaToStorageHtml(
-      quillController.document.toDelta(),
-    );
+    final initialHtml = _deltaToStorageHtml(quillController.document.toDelta());
     _annotations = _normalizeInitialAnnotationAnchors(
       originalContent,
       initialHtml,
@@ -127,25 +125,27 @@ mixin EditorLogic on State<EditorPage> {
       if (unit != 0x0a && unit != 0x2028) nextIndex++;
     }
     positions[before.length] = nextIndex;
-    return List.unmodifiable(notes.map((note) {
-      if (!note.isAnchored) return note;
-      final ranges = <AnnotationRange>[];
-      for (final range in note.ranges) {
-        if (!AnnotationAnchors.matches(before, range)) {
-          return note.copyWith(unresolvedReason: '原文范围已失效，请重新选择字词');
+    return List.unmodifiable(
+      notes.map((note) {
+        if (!note.isAnchored) return note;
+        final ranges = <AnnotationRange>[];
+        for (final range in note.ranges) {
+          if (!AnnotationAnchors.matches(before, range)) {
+            return note.copyWith(unresolvedReason: '原文范围已失效，请重新选择字词');
+          }
+          final mapped = AnnotationRange(
+            start: positions[range.start],
+            end: positions[range.end],
+            quote: range.quote.replaceAll(RegExp(r'[\n\u2028]'), ''),
+          );
+          if (!AnnotationAnchors.matches(after, mapped)) {
+            return note.copyWith(unresolvedReason: '批注只对应换行或无法确认的原文，请重新选择字词');
+          }
+          ranges.add(mapped);
         }
-        final mapped = AnnotationRange(
-          start: positions[range.start],
-          end: positions[range.end],
-          quote: range.quote.replaceAll(RegExp(r'[\n\u2028]'), ''),
-        );
-        if (!AnnotationAnchors.matches(after, mapped)) {
-          return note.copyWith(unresolvedReason: '批注只对应换行或无法确认的原文，请重新选择字词');
-        }
-        ranges.add(mapped);
-      }
-      return note.copyWith(ranges: ranges);
-    }));
+        return note.copyWith(ranges: ranges);
+      }),
+    );
   }
 
   @override
@@ -587,7 +587,10 @@ mixin EditorLogic on State<EditorPage> {
         // U+2028 is a visual line break inside a Quill paragraph. A normal
         // newline remains a paragraph boundary. Keeping these distinct also
         // preserves paragraph-wide reading colour after a save/reopen.
-        delta.insert('\u2028', attributes.isEmpty ? null : Map<String, dynamic>.from(attributes));
+        delta.insert(
+          '\u2028',
+          attributes.isEmpty ? null : Map<String, dynamic>.from(attributes),
+        );
       } else {
         _applyInlineTagToAttributes(tag, attributes);
       }
@@ -685,7 +688,12 @@ mixin EditorLogic on State<EditorPage> {
       var start = 0;
       for (final separator in RegExp(r'[\n\u2028]').allMatches(text)) {
         if (separator.start > start) {
-          current.write(_formatInlineHtml(text.substring(start, separator.start), attributes));
+          current.write(
+            _formatInlineHtml(
+              text.substring(start, separator.start),
+              attributes,
+            ),
+          );
         }
         if (separator.group(0) == '\u2028') {
           current.write('<br>');

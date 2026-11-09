@@ -39,7 +39,9 @@ void main() {
       expect(buttons, findsNWidgets(16));
       expect(tester.getSize(toolbar).width, width - 25);
       expect(
-        tester.getTopLeft(find.byKey(const ValueKey('add-reading-annotation'))).dx,
+        tester
+            .getTopLeft(find.byKey(const ValueKey('add-reading-annotation')))
+            .dx,
         tester.getTopLeft(toolbar).dx + 8,
       );
       final top = tester.getTopLeft(buttons.first).dy;

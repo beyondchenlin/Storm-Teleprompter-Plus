@@ -113,7 +113,11 @@ class EditorPageState extends State<EditorPage>
               alt: true,
             ): () =>
                 unawaited(quickStartTeleprompter()),
-            const SingleActivator(LogicalKeyboardKey.keyM, control: true, alt: true): () =>
+            const SingleActivator(
+              LogicalKeyboardKey.keyM,
+              control: true,
+              alt: true,
+            ): () =>
                 unawaited(addAnnotation()),
             const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
                 showFindReplaceDialog(replaceMode: false),
@@ -192,7 +196,9 @@ class EditorPageState extends State<EditorPage>
                 visualDensity: VisualDensity.standard,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
               ),
             ),
           ),

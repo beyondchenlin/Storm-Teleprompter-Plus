@@ -52,8 +52,10 @@ void main() {
       await editor.save(force: true);
       expect(editor.annotations.single.text, edited);
       expect(articles.articles.single.annotations.single.text, edited);
-      expect(articles.articles.single.annotations.single.text.length,
-          longText.length);
+      expect(
+        articles.articles.single.annotations.single.text.length,
+        longText.length,
+      );
       expect(editor.annotations.single.text, endsWith('保留尾部说明'));
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
