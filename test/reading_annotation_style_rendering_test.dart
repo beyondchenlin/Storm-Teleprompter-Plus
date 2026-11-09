@@ -183,8 +183,11 @@ void main() {
 
     final former20 = oldSixStepResult(20);
     final former36 = oldSixStepResult(36);
-    expect(former36, lessThan(former20),
-      reason: 'The old proportional candidates skip a usable larger size.');
+    expect(
+      former36,
+      lessThan(former20),
+      reason: 'The old proportional candidates skip a usable larger size.',
+    );
 
     var previousActual = 0.0;
     for (var preferred = 10; preferred <= 36; preferred++) {
@@ -193,8 +196,11 @@ void main() {
       expect(label.isTruncated, isFalse);
       expect(label.painter.text!.toPlainText(), note.text);
       expect(actual, inInclusiveRange(8.0, preferred.toDouble()));
-      expect(actual, greaterThanOrEqualTo(previousActual),
-        reason: 'Preferred $preferred must not reverse the previous size.');
+      expect(
+        actual,
+        greaterThanOrEqualTo(previousActual),
+        reason: 'Preferred $preferred must not reverse the previous size.',
+      );
       previousActual = actual;
     }
     expect(previousActual, greaterThan(former36));
