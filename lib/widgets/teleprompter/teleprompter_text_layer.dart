@@ -1262,7 +1262,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   ) {
     if (widget.annotationStyle.preferredFontSizeFor(
           _largestFontSize * _fontScale,
-        ) < ReadingAnnotationStyle.minimumFontSize) return 0;
+        ) <
+        ReadingAnnotationStyle.minimumFontSize)
+      return 0;
     // The first line borrows from the existing scroll padding. Recompute it
     // after viewport/reading-line changes; no new padding is ever introduced.
     final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;

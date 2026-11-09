@@ -973,8 +973,9 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   @visibleForTesting
   ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
 
-  ReadingAnnotationDisplayStatus annotationDisplayStatus({int maximumRows = 64}) =>
-      widget.showAnnotations
+  ReadingAnnotationDisplayStatus annotationDisplayStatus({
+    int maximumRows = 64,
+  }) => widget.showAnnotations
       ? _annotations?.displayStatus(maximumRows: maximumRows) ??
             const ReadingAnnotationDisplayStatus()
       : const ReadingAnnotationDisplayStatus();

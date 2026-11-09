@@ -152,14 +152,13 @@ class SettingsProvider with ChangeNotifier {
       }
     }
     // 批注外观与显示开关一起同步，但不改变从端自设的正文布局。
-    final appearance = mergedSettings
-        .mergeOverrides({
-          for (final key in AppSettings.annotationAppearanceKeys)
-            if (settings.containsKey(key)) key: settings[key],
-        })
-        .toAnnotationAppearanceMap();
+    final appearance = mergedSettings.mergeOverrides({
+      for (final key in AppSettings.annotationAppearanceKeys)
+        if (settings.containsKey(key)) key: settings[key],
+    }).toAnnotationAppearanceMap();
     for (final key in AppSettings.annotationAppearanceKeys) {
-      if (settings.containsKey(key) && _articleOverrides[key] != appearance[key]) {
+      if (settings.containsKey(key) &&
+          _articleOverrides[key] != appearance[key]) {
         _articleOverrides[key] = appearance[key];
         changed = true;
       }
@@ -254,7 +253,9 @@ class SettingsProvider with ChangeNotifier {
     int? color,
   }) => {
     if (fontFamily != null)
-      'annotationFontFamily': AppSettings.normalizeAnnotationFontFamily(fontFamily),
+      'annotationFontFamily': AppSettings.normalizeAnnotationFontFamily(
+        fontFamily,
+      ),
     if (fontSize != null)
       'annotationFontSize': AppSettings.normalizeAnnotationFontSize(fontSize),
     if (color != null)
@@ -312,7 +313,9 @@ class SettingsProvider with ChangeNotifier {
               !_ordinarySettingsQueuedWrites.containsKey(generation) &&
               pendingResetAtStart == null) {
             // 保存失败的批注选择继续可见，重连不能把用户尚未重试的选择吞掉。
-            _settings = loaded.mergeOverrides(_pendingDefaultAnnotationAppearance);
+            _settings = loaded.mergeOverrides(
+              _pendingDefaultAnnotationAppearance,
+            );
           }
           final revision = response.data['readingEmphasisRevision'];
           if (revision is int && revision >= 0) {
@@ -354,9 +357,12 @@ class SettingsProvider with ChangeNotifier {
             () => _writeSettingsSnapshot(connection, generation, snapshot),
           );
           // 其它已确认的全量保存也可带上待保存外观；旧确认不能清掉新选择。
-          if (annotationEditVersion == _defaultAnnotationAppearanceEditVersion &&
+          if (annotationEditVersion ==
+                  _defaultAnnotationAppearanceEditVersion &&
               _pendingDefaultAnnotationAppearance.entries.every(
-                (entry) => snapshot.toAnnotationAppearanceMap()[entry.key] == entry.value,
+                (entry) =>
+                    snapshot.toAnnotationAppearanceMap()[entry.key] ==
+                    entry.value,
               )) {
             _pendingDefaultAnnotationAppearance.clear();
           }

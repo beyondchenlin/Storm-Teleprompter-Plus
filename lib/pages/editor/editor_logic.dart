@@ -26,14 +26,18 @@ mixin EditorLogic on State<EditorPage> {
     final current = annotationPreviewSettings;
     if (current.annotationFontFamily == settings.annotationFontFamily &&
         current.annotationFontSize == settings.annotationFontSize &&
-        current.annotationColor == settings.annotationColor) return;
-    _draftTeleprompterSettings = current.copyWith(
-      annotationFontFamily: settings.annotationFontFamily,
-      annotationFontSize: settings.annotationFontSize,
-      annotationColor: settings.annotationColor,
-    ).toTeleprompterMap();
+        current.annotationColor == settings.annotationColor)
+      return;
+    _draftTeleprompterSettings = current
+        .copyWith(
+          annotationFontFamily: settings.annotationFontFamily,
+          annotationFontSize: settings.annotationFontSize,
+          annotationColor: settings.annotationColor,
+        )
+        .toTeleprompterMap();
     _markChanged();
   }
+
   List<ReadingAnnotation> _annotations = const [];
   List<ReadingAnnotation> get annotations => List.unmodifiable(_annotations);
   String? _annotationFontNoticeContent;
@@ -462,10 +466,11 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   Future<Article?> _runSave(_EditorDraft initialDraft) async {
-    if (mounted && !_disposingEditor) setState(() {
-      isSaving = true;
-      _lastSaveFailed = false;
-    });
+    if (mounted && !_disposingEditor)
+      setState(() {
+        isSaving = true;
+        _lastSaveFailed = false;
+      });
 
     try {
       var draft = initialDraft;
@@ -500,10 +505,11 @@ mixin EditorLogic on State<EditorPage> {
         }
 
         if (savedArticle == null) {
-          if (mounted && !_disposingEditor) setState(() {
-            isDirty = true;
-            _lastSaveFailed = true;
-          });
+          if (mounted && !_disposingEditor)
+            setState(() {
+              isDirty = true;
+              _lastSaveFailed = true;
+            });
           return null;
         }
         _savedArticle = savedArticle;
@@ -518,10 +524,11 @@ mixin EditorLogic on State<EditorPage> {
       }
     } catch (e) {
       debugPrint('[Editor] autosave failed: $e');
-      if (mounted && !_disposingEditor) setState(() {
-        isDirty = true;
-        _lastSaveFailed = true;
-      });
+      if (mounted && !_disposingEditor)
+        setState(() {
+          isDirty = true;
+          _lastSaveFailed = true;
+        });
       return null;
     } finally {
       if (mounted && !_disposingEditor) setState(() => isSaving = false);
@@ -610,7 +617,8 @@ mixin EditorLogic on State<EditorPage> {
       );
     }
 
-    final initialSessionSettings = settingsProvider.mergedSettings.toTeleprompterMap();
+    final initialSessionSettings = settingsProvider.mergedSettings
+        .toTeleprompterMap();
     var lastSessionSettings = initialSessionSettings;
     void rememberSessionSettings() {
       final overrides = settingsProvider.articleOverrides;
@@ -618,29 +626,32 @@ mixin EditorLogic on State<EditorPage> {
         lastSessionSettings = Map<String, dynamic>.from(overrides);
       }
     }
+
     settingsProvider.addListener(rememberSessionSettings);
     try {
       await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MultiProvider(
-          providers: [
-            ChangeNotifierProvider.value(value: teleprompterProvider),
-            ChangeNotifierProvider.value(value: settingsProvider),
-            ChangeNotifierProvider.value(value: _articleProvider),
-          ],
-          child: TeleprompterPage(
-            article: article,
-            persistArticleSettings: autoSaveEnabled || _savedArticle != null,
+        MaterialPageRoute(
+          builder: (_) => MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: teleprompterProvider),
+              ChangeNotifierProvider.value(value: settingsProvider),
+              ChangeNotifierProvider.value(value: _articleProvider),
+            ],
+            child: TeleprompterPage(
+              article: article,
+              persistArticleSettings: autoSaveEnabled || _savedArticle != null,
+            ),
           ),
         ),
-      ),
       );
     } finally {
       settingsProvider.removeListener(rememberSessionSettings);
     }
-    if (mounted && !_sameTeleprompterSettings(
-      initialSessionSettings, lastSessionSettings,
-    )) {
+    if (mounted &&
+        !_sameTeleprompterSettings(
+          initialSessionSettings,
+          lastSessionSettings,
+        )) {
       _draftTeleprompterSettings = lastSessionSettings;
       _markChanged();
     }
@@ -649,9 +660,12 @@ mixin EditorLogic on State<EditorPage> {
   bool _sameTeleprompterSettings(
     Map<String, dynamic> first,
     Map<String, dynamic> second,
-  ) => first.length == second.length && first.entries.every(
-    (entry) => second.containsKey(entry.key) && second[entry.key] == entry.value,
-  );
+  ) =>
+      first.length == second.length &&
+      first.entries.every(
+        (entry) =>
+            second.containsKey(entry.key) && second[entry.key] == entry.value,
+      );
 
   void removeEmptyLines() {
     final updated = contentController.text

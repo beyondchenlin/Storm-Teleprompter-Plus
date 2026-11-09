@@ -44,11 +44,9 @@ const _note = ReadingAnnotation(
     width: 1100,
     direction: TextDirection.ltr,
   );
-  final top = body.maximumGlyphBounds(
-    body.placementAt(0),
-    cache,
-    resolveInk: false,
-  ).top;
+  final top = body
+      .maximumGlyphBounds(body.placementAt(0), cache, resolveInk: false)
+      .top;
   final notes = ReadingAnnotationLayout(
     textLayout: body,
     annotations: [note],
@@ -148,7 +146,10 @@ void main() {
     expect(status.message, contains('按行间留白缩至'));
     expect(label.rect.top, greaterThanOrEqualTo(row.safeBand.top - .01));
     expect(label.rect.bottom, lessThanOrEqualTo(row.safeBand.bottom + .01));
-    expect(row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)), isFalse);
+    expect(
+      row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)),
+      isFalse,
+    );
     expect(value.notes.notesAt(label.rect.center).single.text, note.text);
     expect(value.body.line.text, 'ABCDEFGH');
   });
@@ -159,33 +160,45 @@ void main() {
     final cache = ReadingGlyphPainterCache();
     const notes = [_note];
     Future<void> show(ReadingAnnotationStyle style) async {
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: Padding(
-        padding: const EdgeInsets.only(top: 110),
-        child: ReadingEmphasisLine(
-          key: lineKey,
-          line: line,
-          geometry: const ReadingTextGeometry(fontSize: 64, lineHeight: 1.5),
-          presentation: const ReadingTextPresentation(currentIndex: 2),
-          glyphCache: cache,
-          width: 750,
-          direction: TextDirection.ltr,
-          annotations: notes,
-          annotationStyle: style,
-          annotationLeadingSpace: 100,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.only(top: 110),
+              child: ReadingEmphasisLine(
+                key: lineKey,
+                line: line,
+                geometry: const ReadingTextGeometry(
+                  fontSize: 64,
+                  lineHeight: 1.5,
+                ),
+                presentation: const ReadingTextPresentation(currentIndex: 2),
+                glyphCache: cache,
+                width: 750,
+                direction: TextDirection.ltr,
+                annotations: notes,
+                annotationStyle: style,
+                annotationLeadingSpace: 100,
+              ),
+            ),
+          ),
         ),
-      ))));
+      );
       await settleReadingInk(tester, cache.inkCache);
     }
+
     await show(const ReadingAnnotationStyle(fontSize: 12));
     final state = lineKey.currentState!;
     final body = state.debugLayout;
     final builds = state.debugLayoutBuildCount;
     final pixels = await _bodyPixels(tester, find.byKey(lineKey));
-    await show(const ReadingAnnotationStyle(
-      fontFamily: 'FontMissingForFallbackTest',
-      fontSize: 28,
-      color: 0xFFFF80AB,
-    ));
+    await show(
+      const ReadingAnnotationStyle(
+        fontFamily: 'FontMissingForFallbackTest',
+        fontSize: 28,
+        color: 0xFFFF80AB,
+      ),
+    );
     expect(identical(state.debugLayout, body), isTrue);
     expect(state.debugLayoutBuildCount, builds);
     expect(await _bodyPixels(tester, find.byKey(lineKey)), pixels);
@@ -217,21 +230,29 @@ void main() {
     );
     var reports = 0;
     ReadingAnnotationPreviewStatus? status;
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(
-      builder: (context, setState) => ReadingAnnotationPreview(
-        content: body,
-        annotations: const [note],
-        // Common parent getters create a fresh snapshot on every rebuild.
-        // Equal values and a new callback identity must still settle.
-        settings: settings.copyWith(),
-        focusRawIndex: 6,
-        onLayoutStatus: (next) => setState(() {
-          reports++;
-          status = next;
-        }),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => ReadingAnnotationPreview(
+              content: body,
+              annotations: const [note],
+              // Common parent getters create a fresh snapshot on every rebuild.
+              // Equal values and a new callback identity must still settle.
+              settings: settings.copyWith(),
+              focusRawIndex: 6,
+              onLayoutStatus: (next) => setState(() {
+                reports++;
+                status = next;
+              }),
+            ),
+          ),
+        ),
       ),
-    ))));
-    final line = tester.widget<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine));
+    );
+    final line = tester.widget<ReadingEmphasisLine>(
+      find.byType(ReadingEmphasisLine),
+    );
     await settleReadingInk(tester, line.glyphCache.inkCache);
     for (var index = 0; index < 5; index++) {
       await tester.pump();
@@ -244,7 +265,9 @@ void main() {
     expect(status, isNotNull);
     expect(status!.hasAnnotations, isTrue);
     expect(status!.hasAdaptation, isTrue);
-    final updatedLine = tester.widget<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine));
+    final updatedLine = tester.widget<ReadingEmphasisLine>(
+      find.byType(ReadingEmphasisLine),
+    );
     expect(updatedLine.geometry.fontSize, 64);
     expect(updatedLine.geometry.lineHeight, 1.5);
     expect(updatedLine.geometry.fontFamily, 'Ahem');
@@ -256,29 +279,44 @@ void main() {
   });
 
   testWidgets('播放中修改批注外观不改变滚动偏移或全文高度', (tester) async {
-    final lines = TextParser.parsePlainText(List.filled(40, 'ABCDEFGH').join('\n'));
+    final lines = TextParser.parsePlainText(
+      List.filled(40, 'ABCDEFGH').join('\n'),
+    );
     final controller = ScrollController();
     final layerKey = GlobalKey<TeleprompterTextLayerState>();
     Future<void> show(ReadingAnnotationStyle style) async {
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TeleprompterTextLayer(
-        key: layerKey,
-        scrollController: controller,
-        lines: lines,
-        currentIndex: 0,
-        fontSize: 64,
-        lineHeight: 1.5,
-        mirrorMode: false,
-        annotations: const [_note],
-        annotationStyle: style,
-      ))));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TeleprompterTextLayer(
+              key: layerKey,
+              scrollController: controller,
+              lines: lines,
+              currentIndex: 0,
+              fontSize: 64,
+              lineHeight: 1.5,
+              mirrorMode: false,
+              annotations: const [_note],
+              annotationStyle: style,
+            ),
+          ),
+        ),
+      );
       await tester.pump();
     }
+
     await show(const ReadingAnnotationStyle());
     controller.jumpTo(340);
     await tester.pump();
     final offset = controller.offset;
     final extent = controller.position.maxScrollExtent;
-    await show(const ReadingAnnotationStyle(fontSize: 36, fontFamily: 'Ahem', color: 0xFFFFFF00));
+    await show(
+      const ReadingAnnotationStyle(
+        fontSize: 36,
+        fontFamily: 'Ahem',
+        color: 0xFFFFFF00,
+      ),
+    );
     expect(controller.offset, offset);
     expect(controller.position.maxScrollExtent, extent);
     expect(tester.takeException(), isNull);
@@ -287,20 +325,26 @@ void main() {
   });
 
   testWidgets('匀速预览首行只使用实际视口顶部留白，不借用阅读线位置', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(
-      body: ReadingAnnotationPreview(
-        content: 'ABCDEFGH',
-        annotations: [_note],
-        height: 190,
-        settings: AppSettings(
-          fontSize: 64,
-          autoScrollMode: AutoScrollMode.continuous,
-          readingLineOffset: .9,
-          annotationFontSize: 36,
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ReadingAnnotationPreview(
+            content: 'ABCDEFGH',
+            annotations: [_note],
+            height: 190,
+            settings: AppSettings(
+              fontSize: 64,
+              autoScrollMode: AutoScrollMode.continuous,
+              readingLineOffset: .9,
+              annotationFontSize: 36,
+            ),
+          ),
         ),
       ),
-    )));
-    final line = tester.widget<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine));
+    );
+    final line = tester.widget<ReadingEmphasisLine>(
+      find.byType(ReadingEmphasisLine),
+    );
     expect(line.annotationLeadingSpace, closeTo(190 * .3 + 2, .001));
     expect(line.presentation.continuous, isTrue);
     await tester.pumpWidget(const SizedBox());

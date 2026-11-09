@@ -17,7 +17,9 @@ class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback? onAnnotationAppearance;
 
   const TeleprompterSettingsPanel({
-    super.key, required this.onClose, this.onAnnotationAppearance,
+    super.key,
+    required this.onClose,
+    this.onAnnotationAppearance,
   });
 
   @override
@@ -92,9 +94,18 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         if (widget.onAnnotationAppearance != null)
                           ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.palette_outlined, size: 20),
-                            title: const Text('批注外观', style: TextStyle(fontSize: 13)),
-                            subtitle: const Text('字体、字号和颜色 · 实时预览', style: TextStyle(fontSize: 11)),
+                            leading: const Icon(
+                              Icons.palette_outlined,
+                              size: 20,
+                            ),
+                            title: const Text(
+                              '批注外观',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            subtitle: const Text(
+                              '字体、字号和颜色 · 实时预览',
+                              style: TextStyle(fontSize: 11),
+                            ),
                             trailing: const Icon(Icons.chevron_right, size: 18),
                             onTap: widget.onAnnotationAppearance,
                           ),

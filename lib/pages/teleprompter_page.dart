@@ -395,7 +395,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return false;
   }
 
-  bool get _isCurrentShortcutRoute => ModalRoute.of(context)?.isCurrent ?? false;
+  bool get _isCurrentShortcutRoute =>
+      ModalRoute.of(context)?.isCurrent ?? false;
 
   bool _isPauseShortcut(KeyEvent event) {
     return event.logicalKey == LogicalKeyboardKey.space ||
@@ -671,7 +672,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   icon: const Icon(Icons.palette_outlined, size: 20),
                   color: AppColors.textPrimary,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                 ),
               IconButton(
                 icon: Icon(
@@ -1455,9 +1459,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         readCharColor: settings.readCharColor,
         currentCharScale: settings.currentCharScale,
         textColor: settings.textColor == 0
-            ? ThemeData.estimateBrightnessForColor(Color(settings.teleprompterBgColor)) == Brightness.dark
-                ? 0xFFFFFFFF
-                : 0xFF000000
+            ? ThemeData.estimateBrightnessForColor(
+                        Color(settings.teleprompterBgColor),
+                      ) ==
+                      Brightness.dark
+                  ? 0xFFFFFFFF
+                  : 0xFF000000
             : settings.textColor,
         letterSpacing: settings.letterSpacing,
         highlightCurrentChar: settings.highlightCurrentChar,

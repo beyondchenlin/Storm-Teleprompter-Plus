@@ -84,10 +84,12 @@ class BackupService {
     // Capture before entering either queue: callers cannot mutate a pending
     // restore's lists while an earlier save is still finishing.
     final data = <String, String>{
-      StorageConstants.foldersKey:
-          jsonEncode(backup.folders.map((folder) => folder.toJson()).toList()),
-      StorageConstants.articlesKey:
-          jsonEncode(backup.articles.map((article) => article.toJson()).toList()),
+      StorageConstants.foldersKey: jsonEncode(
+        backup.folders.map((folder) => folder.toJson()).toList(),
+      ),
+      StorageConstants.articlesKey: jsonEncode(
+        backup.articles.map((article) => article.toJson()).toList(),
+      ),
     };
     return _articles.runStorageTransaction(
       (preferences) => _settings.restoreWithData(

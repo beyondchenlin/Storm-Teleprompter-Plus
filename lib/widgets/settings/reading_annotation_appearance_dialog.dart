@@ -51,7 +51,8 @@ class ReadingAnnotationAppearanceDialog extends StatefulWidget {
 
 class _ReadingAnnotationAppearanceDialogState
     extends State<ReadingAnnotationAppearanceDialog> {
-  static const _sampleContent = '<p>把知识讲清楚，让观众听得懂。</p>'
+  static const _sampleContent =
+      '<p>把知识讲清楚，让观众听得懂。</p>'
       '<p>关键的地方放慢一点，再继续。</p>';
   static const _sampleNotes = [
     ReadingAnnotation(
@@ -93,9 +94,8 @@ class _ReadingAnnotationAppearanceDialogState
   Future<void> _chooseFont() async {
     final font = await showDialog<String>(
       context: context,
-      builder: (_) => _AnnotationFontPicker(
-        selected: _settings.annotationFontFamily,
-      ),
+      builder: (_) =>
+          _AnnotationFontPicker(selected: _settings.annotationFontFamily),
     );
     if (mounted && font != null) {
       _update(_settings.copyWith(annotationFontFamily: font));
@@ -122,8 +122,14 @@ class _ReadingAnnotationAppearanceDialogState
         : _settings.annotationFontSize;
     final background = Color(_settings.teleprompterBgColor);
     final foreground = Color(_settings.annotationColor);
-    final light = math.max(background.computeLuminance(), foreground.computeLuminance());
-    final dark = math.min(background.computeLuminance(), foreground.computeLuminance());
+    final light = math.max(
+      background.computeLuminance(),
+      foreground.computeLuminance(),
+    );
+    final dark = math.min(
+      background.computeLuminance(),
+      foreground.computeLuminance(),
+    );
     final lowContrast = (light + .05) / (dark + .05) < 3;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -134,7 +140,9 @@ class _ReadingAnnotationAppearanceDialogState
           key: const ValueKey('annotation-font-picker'),
           onPressed: _chooseFont,
           icon: const Icon(Icons.font_download_outlined, size: 18),
-          label: Text(annotationFontDisplayName(_settings.annotationFontFamily)),
+          label: Text(
+            annotationFontDisplayName(_settings.annotationFontFamily),
+          ),
         ),
         const SizedBox(height: 18),
         Text(
@@ -147,15 +155,17 @@ class _ReadingAnnotationAppearanceDialogState
           runSpacing: 4,
           children: [
             for (final preset in const <(String, double)>[
-              ('自动', 0), ('小 · 10', 10), ('中 · 14', 14), ('大 · 20', 20),
+              ('自动', 0),
+              ('小 · 10', 10),
+              ('中 · 14', 14),
+              ('大 · 20', 20),
             ])
               ChoiceChip(
                 key: ValueKey('annotation-size-${preset.$2.round()}'),
                 label: Text(preset.$1),
                 selected: _settings.annotationFontSize == preset.$2,
-                onSelected: (_) => _update(
-                  _settings.copyWith(annotationFontSize: preset.$2),
-                ),
+                onSelected: (_) =>
+                    _update(_settings.copyWith(annotationFontSize: preset.$2)),
               ),
           ],
         ),
@@ -193,9 +203,8 @@ class _ReadingAnnotationAppearanceDialogState
                   child: InkWell(
                     key: ValueKey('annotation-color-${choice.$2}'),
                     borderRadius: BorderRadius.circular(18),
-                    onTap: () => _update(
-                      _settings.copyWith(annotationColor: choice.$2),
-                    ),
+                    onTap: () =>
+                        _update(_settings.copyWith(annotationColor: choice.$2)),
                     child: Container(
                       width: 34,
                       height: 34,
@@ -205,7 +214,11 @@ class _ReadingAnnotationAppearanceDialogState
                         border: Border.all(color: Colors.black26),
                       ),
                       child: _settings.annotationColor == choice.$2
-                          ? const Icon(Icons.check, size: 20, color: Color(0xFF152126))
+                          ? const Icon(
+                              Icons.check,
+                              size: 20,
+                              color: Color(0xFF152126),
+                            )
                           : null,
                     ),
                   ),
@@ -226,28 +239,48 @@ class _ReadingAnnotationAppearanceDialogState
         const Text('备注文字、字词框和引线使用同一颜色。', style: TextStyle(fontSize: 12)),
         if (lowContrast) ...[
           const SizedBox(height: 8),
-          const Text('当前颜色与提词背景接近，请在预览里确认是否清楚。',
-            style: TextStyle(fontSize: 12, color: Color(0xFFD99930))),
+          const Text(
+            '当前颜色与提词背景接近，请在预览里确认是否清楚。',
+            style: TextStyle(fontSize: 12, color: Color(0xFFD99930)),
+          ),
         ],
       ],
     );
   }
 
   Widget _preview(double height) {
-    final hasNotes = widget.content.isNotEmpty &&
+    final hasNotes =
+        widget.content.isNotEmpty &&
         widget.annotations.any((note) => note.isAnchored);
     var focus = widget.focusRawIndex;
-    if (hasNotes && !widget.annotations.any((note) => note.isAnchored &&
-        note.ranges.any((range) => focus != null && range.start <= focus && focus < range.end))) {
-      final notes = widget.annotations.where((note) => note.isAnchored).toList();
-      focus = (notes.where((note) => note.ranges.first.start >= (focus ?? 0)).firstOrNull ??
-          notes.first).ranges.first.start;
+    if (hasNotes &&
+        !widget.annotations.any(
+          (note) =>
+              note.isAnchored &&
+              note.ranges.any(
+                (range) =>
+                    focus != null && range.start <= focus && focus < range.end,
+              ),
+        )) {
+      final notes = widget.annotations
+          .where((note) => note.isAnchored)
+          .toList();
+      focus =
+          (notes
+                      .where((note) => note.ranges.first.start >= (focus ?? 0))
+                      .firstOrNull ??
+                  notes.first)
+              .ranges
+              .first
+              .start;
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(hasNotes ? '本稿件效果 · 实时预览' : '示例效果 · 实时预览',
-          style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(
+          hasNotes ? '本稿件效果 · 实时预览' : '示例效果 · 实时预览',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         ReadingAnnotationPreview(
           key: const ValueKey('annotation-appearance-preview'),
@@ -265,8 +298,10 @@ class _ReadingAnnotationAppearanceDialogState
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 6),
-        const Text('显示当前字词附近的局部内容；实际换行随提词窗口宽度变化。',
-          style: TextStyle(fontSize: 12)),
+        const Text(
+          '显示当前字词附近的局部内容；实际换行随提词窗口宽度变化。',
+          style: TextStyle(fontSize: 12),
+        ),
       ],
     );
   }
@@ -281,46 +316,74 @@ class _ReadingAnnotationAppearanceDialogState
       content: SizedBox(
         width: 900,
         height: math.max(180, math.min(540, available.height - 184)),
-        child: LayoutBuilder(builder: (context, constraints) {
-          if (constraints.maxWidth >= 720) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(width: 320, child: SingleChildScrollView(child: _controls())),
-                const SizedBox(width: 24),
-                Expanded(child: SingleChildScrollView(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Text(widget.scopeLabel, style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 12),
-                    _preview(math.max(140, math.min(310, constraints.maxHeight - 120))),
-                  ]),
-                )),
-              ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 720) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: SingleChildScrollView(child: _controls()),
+                  ),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            widget.scopeLabel,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          _preview(
+                            math.max(
+                              140,
+                              math.min(310, constraints.maxHeight - 120),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    widget.scopeLabel,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  _preview(190),
+                  const Divider(height: 28),
+                  _controls(),
+                ],
+              ),
             );
-          }
-          return SingleChildScrollView(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(widget.scopeLabel, style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 12),
-              _preview(190),
-              const Divider(height: 28),
-              _controls(),
-            ],
-          ));
-        }),
+          },
+        ),
       ),
       actions: [
         TextButton(
           key: const ValueKey('annotation-appearance-reset'),
-          onPressed: () => _update(_settings.copyWith(
-            annotationFontFamily: '',
-            annotationFontSize: 0,
-            annotationColor: AppSettings.defaultAnnotationColor,
-          )),
+          onPressed: () => _update(
+            _settings.copyWith(
+              annotationFontFamily: '',
+              annotationFontSize: 0,
+              annotationColor: AppSettings.defaultAnnotationColor,
+            ),
+          ),
           child: const Text('恢复默认'),
         ),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         FilledButton(
           key: const ValueKey('annotation-appearance-apply'),
           onPressed: () => Navigator.pop(context, _settings),
@@ -336,12 +399,17 @@ String annotationFontDisplayName(String family) {
     '': '跟随正文字体',
     'Microsoft YaHei': '微软雅黑',
     'Microsoft YaHei UI': '微软雅黑（界面）',
-    'SimHei': '黑体', 'SimSun': '宋体', 'NSimSun': '新宋体',
-    'KaiTi': '楷体', 'FangSong': '仿宋', 'DengXian': '等线',
-    'Noto Sans SC': '思源黑体', 'Noto Serif SC': '思源宋体',
+    'SimHei': '黑体',
+    'SimSun': '宋体',
+    'NSimSun': '新宋体',
+    'KaiTi': '楷体',
+    'FangSong': '仿宋',
+    'DengXian': '等线',
+    'Noto Sans SC': '思源黑体',
+    'Noto Serif SC': '思源宋体',
   };
-  return names[family] ?? (RegExp(r'[A-Za-z]').hasMatch(family)
-      ? '$family（系统字体）' : family);
+  return names[family] ??
+      (RegExp(r'[A-Za-z]').hasMatch(family) ? '$family（系统字体）' : family);
 }
 
 class _AnnotationFontPicker extends StatefulWidget {
@@ -366,41 +434,67 @@ class _AnnotationFontPickerState extends State<_AnnotationFontPicker> {
     title: const Text('选择批注字体'),
     content: SizedBox(
       width: 400,
-      height: math.min(400, math.max(120, MediaQuery.sizeOf(context).height - 220)),
-      child: Column(children: [
-        TextField(
-          key: const ValueKey('annotation-font-search'),
-          decoration: const InputDecoration(hintText: '搜索字体名称', prefixIcon: Icon(Icons.search)),
-          onChanged: (value) => setState(() => _query = value.trim().toLowerCase()),
-        ),
-        const SizedBox(height: 8),
-        Expanded(child: FutureBuilder<List<String>>(
-          future: _fonts,
-          builder: (context, snapshot) {
-            final fonts = <String>{'', widget.selected,
-              ...?snapshot.data,
-            }.where((font) => _query.isEmpty ||
-              font.toLowerCase().contains(_query) ||
-              annotationFontDisplayName(font).toLowerCase().contains(_query)
-            ).toList();
-            if (fonts.isEmpty) return const Center(child: Text('没有匹配的字体'));
-            return ListView.builder(
-              itemCount: fonts.length,
-              itemBuilder: (context, index) {
-                final font = fonts[index];
-                return ListTile(
-                  title: Text(annotationFontDisplayName(font),
-                    style: TextStyle(fontFamily: font.isEmpty ? null : font)),
-                  subtitle: const Text('重读 · 停一秒'),
-                  trailing: font == widget.selected ? const Icon(Icons.check) : null,
-                  onTap: () => Navigator.pop(context, font),
+      height: math.min(
+        400,
+        math.max(120, MediaQuery.sizeOf(context).height - 220),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            key: const ValueKey('annotation-font-search'),
+            decoration: const InputDecoration(
+              hintText: '搜索字体名称',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: (value) =>
+                setState(() => _query = value.trim().toLowerCase()),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: FutureBuilder<List<String>>(
+              future: _fonts,
+              builder: (context, snapshot) {
+                final fonts = <String>{'', widget.selected, ...?snapshot.data}
+                    .where(
+                      (font) =>
+                          _query.isEmpty ||
+                          font.toLowerCase().contains(_query) ||
+                          annotationFontDisplayName(
+                            font,
+                          ).toLowerCase().contains(_query),
+                    )
+                    .toList();
+                if (fonts.isEmpty) return const Center(child: Text('没有匹配的字体'));
+                return ListView.builder(
+                  itemCount: fonts.length,
+                  itemBuilder: (context, index) {
+                    final font = fonts[index];
+                    return ListTile(
+                      title: Text(
+                        annotationFontDisplayName(font),
+                        style: TextStyle(
+                          fontFamily: font.isEmpty ? null : font,
+                        ),
+                      ),
+                      subtitle: const Text('重读 · 停一秒'),
+                      trailing: font == widget.selected
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => Navigator.pop(context, font),
+                    );
+                  },
                 );
               },
-            );
-          },
-        )),
-      ]),
+            ),
+          ),
+        ],
+      ),
     ),
-    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消'))],
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+    ],
   );
 }

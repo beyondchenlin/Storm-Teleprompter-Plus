@@ -78,9 +78,7 @@ class ReadingAnnotationDisplayStatus {
   bool get hasAnnotations => anchorCount > 0;
   int get hiddenLabelCount => anchorCount - labelCount;
   bool get hasAdaptation =>
-      reducedLabelCount > 0 ||
-      truncatedLabelCount > 0 ||
-      hiddenLabelCount > 0;
+      reducedLabelCount > 0 || truncatedLabelCount > 0 || hiddenLabelCount > 0;
 
   String get message {
     if (!hasAnnotations) return '选中原文字词，即可预览批注效果。';
@@ -99,9 +97,7 @@ class ReadingAnnotationDisplayStatus {
         : '${size(smallest)}～${size(largest)} 像素';
     return [
       if (range.isNotEmpty)
-        reducedLabelCount > 0
-            ? '已按行间留白缩至 $range。'
-            : '当前显示 $range。',
+        reducedLabelCount > 0 ? '已按行间留白缩至 $range。' : '当前显示 $range。',
       if (truncatedLabelCount > 0) '长批注已省略，点击查看全文。',
       if (hiddenLabelCount > 0) '部分批注仅显示字词框，可点击查看全文。',
     ].join();

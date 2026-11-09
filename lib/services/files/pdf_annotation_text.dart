@@ -13,8 +13,18 @@ String extractPdfRichAnnotationText(String rich) {
   }
 
   const blocks = {
-    'p', 'div', 'li', 'tr', 'blockquote', 'pre',
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p',
+    'div',
+    'li',
+    'tr',
+    'blockquote',
+    'pre',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
   };
   final text = StringBuffer();
   var endsWithBreak = false;
@@ -36,7 +46,8 @@ String extractPdfRichAnnotationText(String rich) {
       // Pretty-print indentation between paragraph elements is XML structure,
       // not an extra blank coaching line. Keep whitespace within inline runs
       // and honour xml:space="preserve" on the original rich-text body.
-      final paragraphIndent = !preserveSpace &&
+      final paragraphIndent =
+          !preserveSpace &&
           value.trim().isEmpty &&
           parent != null &&
           parent.children.whereType<XmlElement>().any(
@@ -59,8 +70,12 @@ String extractPdfRichAnnotationText(String rich) {
       append('\n');
       return;
     }
-    final space = node.getAttribute('space', namespaceUri: 'http://www.w3.org/XML/1998/namespace');
-    final preserve = space == 'preserve' ||
+    final space = node.getAttribute(
+      'space',
+      namespaceUri: 'http://www.w3.org/XML/1998/namespace',
+    );
+    final preserve =
+        space == 'preserve' ||
         (space != 'default' && (preserveSpace || name == 'pre'));
     final isBlock = blocks.contains(name);
     if (isBlock) boundary();

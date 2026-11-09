@@ -261,8 +261,9 @@ class ReadingAnnotationLayout {
     for (final placement in textLayout.placementsForRow(index)) {
       final glyph = placement.grapheme;
       if (style.preferredFontSizeFor(
-            textLayout.geometry.fontSizeFor(glyph.format),
-          ) >= ReadingAnnotationStyle.minimumFontSize &&
+                textLayout.geometry.fontSizeFor(glyph.format),
+              ) >=
+              ReadingAnnotationStyle.minimumFontSize &&
           _intersecting(glyph.rawStart, glyph.rawEnd + 1).isNotEmpty) {
         return true;
       }
@@ -453,7 +454,10 @@ class ReadingAnnotationLayout {
           // A larger preferred label must not turn the accepted short leader
           // into a long diagonal or push a fitting label past the margin.
           // Keep the leader tied to the body while keeping its 17.5° angle.
-          math.max(minimumRise, math.min(fontSize, anchor.bodyFontSize * .22) * .75),
+          math.max(
+            minimumRise,
+            math.min(fontSize, anchor.bodyFontSize * .22) * .75,
+          ),
         );
         final run =
             rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);
@@ -574,7 +578,8 @@ class ReadingAnnotationLayout {
         final size = label.painter.text!.style!.fontSize!;
         smallest = smallest == null ? size : math.min(smallest, size);
         largest = largest == null ? size : math.max(largest, size);
-        if (size + .01 < style.preferredFontSizeFor(label.anchor.bodyFontSize)) {
+        if (size + .01 <
+            style.preferredFontSizeFor(label.anchor.bodyFontSize)) {
           reduced++;
         }
         if (label.isTruncated) truncated++;

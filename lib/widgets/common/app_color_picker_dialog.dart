@@ -123,7 +123,9 @@ class _AppColorPickerDialogState extends State<AppColorPickerDialog> {
                   controller: _hexController,
                   decoration: InputDecoration(
                     labelText: '十六进制颜色值',
-                    hintText: widget.enableAlpha ? '#AARRGGBB 或 #RRGGBB' : '#RRGGBB',
+                    hintText: widget.enableAlpha
+                        ? '#AARRGGBB 或 #RRGGBB'
+                        : '#RRGGBB',
                     errorText: _hexError,
                     border: const OutlineInputBorder(),
                     isDense: true,
@@ -157,8 +159,14 @@ class _AppColorPickerDialogState extends State<AppColorPickerDialog> {
             child: Text(widget.resetLabel),
           ),
         FilledButton(
-          onPressed: _hexError != null ? null : () => Navigator.pop(context,
-            widget.enableAlpha ? _pickerColor : _pickerColor.withAlpha(255)),
+          onPressed: _hexError != null
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  widget.enableAlpha
+                      ? _pickerColor
+                      : _pickerColor.withAlpha(255),
+                ),
           child: const Text('确定'),
         ),
       ],

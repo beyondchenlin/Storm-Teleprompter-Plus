@@ -17,10 +17,13 @@ Article _article() => Article(
   id: 'appearance-editor',
   title: '批注外观测试',
   content: '<p>把知识讲清楚，让观众听得懂。</p>',
-  annotations: const [ReadingAnnotation(
-    id: 'cue', text: '重读',
-    ranges: [AnnotationRange(start: 3, end: 6, quote: '讲清楚')],
-  )],
+  annotations: const [
+    ReadingAnnotation(
+      id: 'cue',
+      text: '重读',
+      ranges: [AnnotationRange(start: 3, end: 6, quote: '讲清楚')],
+    ),
+  ],
   teleprompterSettings: const AppSettings(
     fontSize: 52,
     lineHeight: 1.7,
@@ -28,24 +31,31 @@ Article _article() => Article(
     annotationFontSize: 12,
     annotationColor: 0xFF8BD1D0,
   ).toTeleprompterMap(),
-  createdAt: DateTime(2026), updatedAt: DateTime(2026),
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
 );
 
 Future<void> _settle(WidgetTester tester) async {
   await tester.pumpAndSettle();
-  final caches = tester.widgetList<ReadingEmphasisLine>(
-    find.byType(ReadingEmphasisLine),
-  ).map((line) => line.glyphCache.inkCache).toSet();
-  for (final cache in caches) { await settleReadingInk(tester, cache); }
+  final caches = tester
+      .widgetList<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine))
+      .map((line) => line.glyphCache.inkCache)
+      .toSet();
+  for (final cache in caches) {
+    await settleReadingInk(tester, cache);
+  }
   await tester.pumpAndSettle();
 }
 
 Future<void> _unmount(WidgetTester tester) async {
-  final caches = tester.widgetList<ReadingEmphasisLine>(
-    find.byType(ReadingEmphasisLine),
-  ).map((line) => line.glyphCache.inkCache).toSet();
+  final caches = tester
+      .widgetList<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine))
+      .map((line) => line.glyphCache.inkCache)
+      .toSet();
   await tester.pumpWidget(const SizedBox.shrink());
-  for (final cache in caches) { await settleReadingInk(tester, cache); }
+  for (final cache in caches) {
+    await settleReadingInk(tester, cache);
+  }
   await tester.pumpAndSettle();
 }
 
@@ -58,10 +68,16 @@ void main() {
     final article = _article();
     final articles = QuickTestArticles()..upsertArticle(article);
     final settings = QuickTestSettings();
-    await mountQuickWorkspace(tester,
-      EditorPage(article: article, quickMode: true, autoSave: false), articles, settings);
+    await mountQuickWorkspace(
+      tester,
+      EditorPage(article: article, quickMode: true, autoSave: false),
+      articles,
+      settings,
+    );
     final editor = quickEditor(tester);
-    final originalNotes = editor.annotations.map((note) => note.toJson()).toList();
+    final originalNotes = editor.annotations
+        .map((note) => note.toJson())
+        .toList();
     final opening = editor.editAnnotationAppearance();
     await _settle(tester);
     await tester.tap(find.byKey(const ValueKey('annotation-size-20')));
@@ -94,22 +110,45 @@ void main() {
     expect(saved.teleprompterSettings!['annotationFontSize'], 20);
     expect(saved.teleprompterSettings!['annotationColor'], 0xFFFFB38A);
     expect(saved.teleprompterSettings!['annotationFontFamily'], 'SimSun');
-    expect(saved.annotations.map((note) => note.toJson()).toList(), originalNotes);
+    expect(
+      saved.annotations.map((note) => note.toJson()).toList(),
+      originalNotes,
+    );
     expect(settings.settings.annotationFontSize, 0);
     await _unmount(tester);
-    await mountQuickWorkspace(tester,
-      EditorPage(article: saved, quickMode: true, autoSave: false), articles, settings);
-    expect(quickEditor(tester).annotationPreviewSettings.annotationFontSize, 20);
-    expect(quickEditor(tester).annotationPreviewSettings.annotationColor, 0xFFFFB38A);
+    await mountQuickWorkspace(
+      tester,
+      EditorPage(article: saved, quickMode: true, autoSave: false),
+      articles,
+      settings,
+    );
+    expect(
+      quickEditor(tester).annotationPreviewSettings.annotationFontSize,
+      20,
+    );
+    expect(
+      quickEditor(tester).annotationPreviewSettings.annotationColor,
+      0xFFFFB38A,
+    );
     await _unmount(tester);
   });
 
   testWidgets('保存失败保留新稿且不会开始播放旧的成功快照', (tester) async {
     final article = _article();
     final articles = QuickTestArticles()..upsertArticle(article);
-    await mountQuickWorkspace(tester, EditorPage(article: article), articles, QuickTestSettings());
+    await mountQuickWorkspace(
+      tester,
+      EditorPage(article: article),
+      articles,
+      QuickTestSettings(),
+    );
     final editor = quickEditor(tester);
-    editor.quillController.replaceText(0, 0, '新版本', const TextSelection.collapsed(offset: 3));
+    editor.quillController.replaceText(
+      0,
+      0,
+      '新版本',
+      const TextSelection.collapsed(offset: 3),
+    );
     articles.fail = true;
     await editor.quickStartTeleprompter();
     await tester.pumpAndSettle();
@@ -124,13 +163,26 @@ void main() {
   testWidgets('未保存临时稿播放调整外观后返回编辑器保留效果，不强制落盘', (tester) async {
     final articles = QuickTestArticles();
     final settings = QuickTestSettings();
-    await mountQuickWorkspace(tester,
-      const EditorPage(quickMode: true, autoSave: false), articles, settings);
+    await mountQuickWorkspace(
+      tester,
+      const EditorPage(quickMode: true, autoSave: false),
+      articles,
+      settings,
+    );
     final editor = quickEditor(tester);
-    editor.quillController.replaceText(0, 0, '临时正文', const TextSelection.collapsed(offset: 4));
+    editor.quillController.replaceText(
+      0,
+      0,
+      '临时正文',
+      const TextSelection.collapsed(offset: 4),
+    );
     final playing = editor.quickStartTeleprompter();
     await tester.pumpAndSettle();
-    await settings.setAnnotationAppearance(fontFamily: 'SimHei', fontSize: 18, color: 0xFFC9B5FF);
+    await settings.setAnnotationAppearance(
+      fontFamily: 'SimHei',
+      fontSize: 18,
+      color: 0xFFC9B5FF,
+    );
     await tester.pump();
     Navigator.of(tester.element(find.byType(TeleprompterPage))).pop();
     await tester.pumpAndSettle();
@@ -145,16 +197,35 @@ void main() {
   testWidgets('普通稿件保存失败时系统返回不会丢弃当前正文或外观', (tester) async {
     final article = _article();
     final articles = QuickTestArticles()..upsertArticle(article);
-    await mountQuickWorkspace(tester, Builder(builder: (context) => Scaffold(
-      body: TextButton(onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => EditorPage(article: article)),
-      ), child: const Text('编辑')),
-    )), articles, QuickTestSettings());
+    await mountQuickWorkspace(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => EditorPage(article: article),
+              ),
+            ),
+            child: const Text('编辑'),
+          ),
+        ),
+      ),
+      articles,
+      QuickTestSettings(),
+    );
     await tester.tap(find.text('编辑'));
     await _settle(tester);
     final editor = quickEditor(tester);
-    editor.quillController.replaceText(0, 0, '未存', const TextSelection.collapsed(offset: 2));
-    editor.applyAnnotationAppearance(editor.annotationPreviewSettings.copyWith(annotationFontSize: 20));
+    editor.quillController.replaceText(
+      0,
+      0,
+      '未存',
+      const TextSelection.collapsed(offset: 2),
+    );
+    editor.applyAnnotationAppearance(
+      editor.annotationPreviewSettings.copyWith(annotationFontSize: 20),
+    );
     articles.fail = true;
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -169,7 +240,10 @@ void main() {
     await editor.requestExit();
     await tester.pumpAndSettle();
     expect(find.byType(EditorPage), findsNothing);
-    expect(articles.articles.single.teleprompterSettings!['annotationFontSize'], 20);
+    expect(
+      articles.articles.single.teleprompterSettings!['annotationFontSize'],
+      20,
+    );
     await _unmount(tester);
   });
 
@@ -180,17 +254,34 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     AppSettings? result;
     final article = _article();
-    final initial = const AppSettings().mergeOverrides(article.teleprompterSettings!);
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => Scaffold(
-      body: TextButton(onPressed: () async {
-        result = await ReadingAnnotationAppearanceDialog.show(context,
-          initialSettings: initial, content: article.content,
-          annotations: article.annotations, focusRawIndex: -1);
-      }, child: const Text('打开')),
-    ))));
+    final initial = const AppSettings().mergeOverrides(
+      article.teleprompterSettings!,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                result = await ReadingAnnotationAppearanceDialog.show(
+                  context,
+                  initialSettings: initial,
+                  content: article.content,
+                  annotations: article.annotations,
+                  focusRawIndex: -1,
+                );
+              },
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.tap(find.text('打开'));
     await _settle(tester);
-    final preview = tester.widget<ReadingAnnotationPreview>(find.byKey(const ValueKey('annotation-appearance-preview')));
+    final preview = tester.widget<ReadingAnnotationPreview>(
+      find.byKey(const ValueKey('annotation-appearance-preview')),
+    );
     expect(preview.focusRawIndex, 3);
     await tester.tap(find.byKey(const ValueKey('annotation-appearance-reset')));
     await _settle(tester);
@@ -207,17 +298,35 @@ void main() {
 
   testWidgets('无效颜色代码不能提交旧颜色，批注自定义颜色保持可见', (tester) async {
     Color? selected;
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => Scaffold(
-      body: TextButton(onPressed: () async {
-        selected = await AppColorPickerDialog.show(context,
-          title: '批注颜色', currentColor: Colors.white, enableAlpha: false);
-      }, child: const Text('打开')),
-    ))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                selected = await AppColorPickerDialog.show(
+                  context,
+                  title: '批注颜色',
+                  currentColor: Colors.white,
+                  enableAlpha: false,
+                );
+              },
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '#12');
     await tester.pump();
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确定')).onPressed, isNull);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '确定'))
+          .onPressed,
+      isNull,
+    );
     await tester.enterText(find.byType(TextField), '#00336699');
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, '确定'));

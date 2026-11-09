@@ -63,15 +63,17 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
   bool _statusScheduled = false;
   ReadingAnnotationPreviewStatus? _reportedStatus;
 
-  AppSettings get _settings => widget.settings ?? const AppSettings(
-    fontSize: _legacyFontSize,
-    lineHeight: 1.8,
-    teleprompterFontFamily: '',
-    defaultBold: false,
-    currentCharScale: 1,
-    currentCharColor: 0xFFFFE36C,
-    grayReadChars: false,
-  );
+  AppSettings get _settings =>
+      widget.settings ??
+      const AppSettings(
+        fontSize: _legacyFontSize,
+        lineHeight: 1.8,
+        teleprompterFontFamily: '',
+        defaultBold: false,
+        currentCharScale: 1,
+        currentCharColor: 0xFFFFE36C,
+        grayReadChars: false,
+      );
 
   ReadingTextGeometry get _geometry => ReadingTextGeometry(
     fontSize: _settings.fontSize,
@@ -118,13 +120,15 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _statusScheduled = false;
       if (!mounted) return;
-      final status = _lineKey.currentState?.annotationDisplayStatus() ??
+      final status =
+          _lineKey.currentState?.annotationDisplayStatus() ??
           const ReadingAnnotationPreviewStatus();
       if (status == _reportedStatus) return;
       _reportedStatus = status;
       widget.onLayoutStatus?.call(status);
     });
   }
+
   Duration? _pointerStarted;
   Offset? _pointerStartPosition;
   int? _activePointer;
@@ -161,10 +165,11 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       if (focus < last.rawIndex + last.char.length) break;
     }
     if (source == null) return null;
-    final columns = (width / (_settings.fontSize * readingEmphasisMaximumScale * 1.08))
-        .floor()
-        .clamp(2, 28)
-        .toInt();
+    final columns =
+        (width / (_settings.fontSize * readingEmphasisMaximumScale * 1.08))
+            .floor()
+            .clamp(2, 28)
+            .toInt();
     final key = (source, focus, columns);
     if (_excerptKey == key) return _excerpt;
     _excerptKey = key;
@@ -283,7 +288,8 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       }
       return math.min(cap, padding + 2);
     }
-    if (preceding.characters.isEmpty) return math.min(cap, geometry.emptyHeight + 4);
+    if (preceding.characters.isEmpty)
+      return math.min(cap, geometry.emptyHeight + 4);
     if (_precedingLayout?.geometry != geometry ||
         _precedingLayout?.width != width ||
         !identical(_precedingLayout?.line, preceding)) {
@@ -411,9 +417,12 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
                         currentCharColor: settings.currentCharColor,
                         readCharColor: settings.readCharColor,
                         textColor: settings.textColor == 0
-                            ? ThemeData.estimateBrightnessForColor(Color(settings.teleprompterBgColor)) == Brightness.dark
-                                ? 0xFFFFFFFF
-                                : 0xFF000000
+                            ? ThemeData.estimateBrightnessForColor(
+                                        Color(settings.teleprompterBgColor),
+                                      ) ==
+                                      Brightness.dark
+                                  ? 0xFFFFFFFF
+                                  : 0xFF000000
                             : settings.textColor,
                         enabled: settings.readingEmphasisEnabled,
                         continuous: settings.isContinuousScroll,
@@ -426,7 +435,9 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
                       direction: TextDirection.ltr,
                       annotations: focusedNotes,
                       annotationLeadingSpace: leadingSpace,
-                      annotationStyle: ReadingAnnotationStyle.fromSettings(settings),
+                      annotationStyle: ReadingAnnotationStyle.fromSettings(
+                        settings,
+                      ),
                       handleAnnotationLabelTaps: false,
                       onAnnotationsTap: widget.onNoteTap == null
                           ? null
