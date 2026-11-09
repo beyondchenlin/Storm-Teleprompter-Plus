@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -91,7 +92,10 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
     // An inline callback acquires a new identity on every parent setState.
     // Reset only for new preview inputs, otherwise status -> rebuild -> status
     // would schedule an endless series of frames in the appearance dialog.
-    if (widget.settings != oldWidget.settings ||
+    if (!mapEquals(
+          widget.settings?.toSessionMap(),
+          oldWidget.settings?.toSessionMap(),
+        ) ||
         widget.content != oldWidget.content ||
         widget.focusRawIndex != oldWidget.focusRawIndex ||
         (oldWidget.onLayoutStatus == null && widget.onLayoutStatus != null)) {

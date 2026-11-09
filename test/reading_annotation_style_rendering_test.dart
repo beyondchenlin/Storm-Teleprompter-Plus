@@ -207,7 +207,9 @@ void main() {
       builder: (context, setState) => ReadingAnnotationPreview(
         content: body,
         annotations: const [note],
-        settings: settings,
+        // Common parent getters create a fresh snapshot on every rebuild.
+        // Equal values and a new callback identity must still settle.
+        settings: settings.copyWith(),
         focusRawIndex: 6,
         onLayoutStatus: (next) => setState(() {
           reports++;
