@@ -583,6 +583,18 @@ class ArticleService {
     return operation;
   }
 
+  /// Keeps whole-backup commits ordered with article and folder mutations.
+  /// The callback must access the store directly, not re-enter this queue.
+  Future<T> runStorageTransaction<T>(
+    Future<T> Function(AppPreferences preferences) transaction,
+  ) => _mutate(() => transaction(_prefs));
+
+  /// A backup must not combine folders from one mutation with manuscripts
+  /// from another. Keep their snapshots stable until its settings read ends.
+  Future<T> readBackupSnapshot<T>(
+    Future<T> Function(List<Article> articles, List<Folder> folders) read,
+  ) => _mutate(() => read(_readArticles(), _readFolders()));
+
   /// 获取所有稿件列表
   Future<List<Article>> loadArticles() async {
     await _pendingMutation;

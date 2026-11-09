@@ -59,7 +59,7 @@ String extractPdfRichAnnotationText(String rich) {
       append('\n');
       return;
     }
-    final space = node.getAttribute('space', namespace: 'http://www.w3.org/XML/1998/namespace');
+    final space = node.getAttribute('space', namespaceUri: 'http://www.w3.org/XML/1998/namespace');
     final preserve = space == 'preserve' ||
         (space != 'default' && (preserveSpace || name == 'pre'));
     final isBlock = blocks.contains(name);

@@ -9,9 +9,9 @@ import '../../utils/constants.dart';
 import 'app_data_directory.dart';
 
 class AppPreferences {
-  AppPreferences._shared(this._sharedPreferences)
+  AppPreferences._shared(this._sharedPreferences, this._values)
     : _file = null,
-      _values = null;
+      assert(_values != null);
 
   AppPreferences._file(this._file, this._values) : _sharedPreferences = null;
 
@@ -21,6 +21,7 @@ class AppPreferences {
   Future<void> _pendingWrite = Future<void>.value();
 
   static Future<AppPreferences>? _instance;
+  static const _sharedSnapshotKey = 'bk_atomic_preferences_snapshot_v1';
 
   static Future<AppPreferences> getInstance() {
     return _instance ??= _create();
@@ -28,13 +29,21 @@ class AppPreferences {
 
   static Future<AppPreferences> _create() async {
     if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-      return AppPreferences._shared(await SharedPreferences.getInstance());
+      return fromSharedPreferencesForTesting(
+        await SharedPreferences.getInstance(),
+      );
     }
 
     final dataDirectory = await getAppDataDirectory();
     final file = File(
       p.join(dataDirectory.path, StorageConstants.desktopPreferencesFileName),
     );
+    return openFileForTesting(file);
+  }
+
+  /// Uses the same file transaction path with a private temporary test file.
+  @visibleForTesting
+  static Future<AppPreferences> openFileForTesting(File file) async {
     final values = <String, String>{};
     if (await file.exists()) {
       try {
@@ -53,39 +62,61 @@ class AppPreferences {
     return AppPreferences._file(file, values);
   }
 
-  String? getString(String key) {
-    return _sharedPreferences?.getString(key) ?? _values?[key];
+  /// A single stored overlay makes multi-key restores atomic on platforms
+  /// backed by shared preferences too. Unchanged legacy keys remain readable.
+  @visibleForTesting
+  static AppPreferences fromSharedPreferencesForTesting(
+    SharedPreferences preferences,
+  ) {
+    final values = <String, String>{};
+    final stored = preferences.getString(_sharedSnapshotKey);
+    if (stored != null) {
+      final decoded = jsonDecode(stored) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        if (entry.value is String) values[entry.key] = entry.value as String;
+      }
+    }
+    return AppPreferences._shared(preferences, values);
   }
 
-  Future<bool> setString(String key, String value) async {
-    final sharedPreferences = _sharedPreferences;
-    if (sharedPreferences != null) {
-      return sharedPreferences.setString(key, value);
-    }
+  String? getString(String key) {
+    return _values?[key] ?? _sharedPreferences?.getString(key);
+  }
+
+  Future<bool> setString(String key, String value) => setStrings({key: value});
+
+  /// Commit related keys together; failed writes never publish partial values.
+  Future<bool> setStrings(Map<String, String> replacements) async {
+    final captured = Map<String, String>.from(replacements);
 
     final write = _pendingWrite.then((_) async {
       // 在队列执行时基于最后成功写入的值合并，失败值不能进入其他保存。
       final values = _values!;
-      final snapshot = Map<String, String>.from(values)..[key] = value;
-      await _writeSnapshot(snapshot);
+      final snapshot = Map<String, String>.from(values)..addAll(captured);
+      if (!await _writeSnapshot(snapshot)) return false;
       values
         ..clear()
         ..addAll(snapshot);
+      return true;
     });
     _pendingWrite = write.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
     );
-    await write;
-    return true;
+    return write;
   }
 
-  Future<void> _writeSnapshot(Map<String, String> snapshot) async {
+  Future<bool> _writeSnapshot(Map<String, String> snapshot) async {
+    final preferences = _sharedPreferences;
+    if (preferences != null) {
+      return preferences.setString(_sharedSnapshotKey, jsonEncode(snapshot));
+    }
     final file = _file!;
     await file.parent.create(recursive: true);
     final temporaryFile = File('${file.path}.tmp');
     await temporaryFile.writeAsString(jsonEncode(snapshot), flush: true);
     // 同目录替换保留旧文件直到新文件就绪；Windows 原生重命名支持替换。
     await temporaryFile.rename(file.path);
+    return true;
   }
 }

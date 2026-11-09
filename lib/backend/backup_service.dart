@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import '../models/app_backup.dart';
+import '../utils/constants.dart';
 import 'article_service.dart';
 import 'settings_service.dart';
 import 'ws_protocol.dart';
@@ -29,12 +32,7 @@ class BackupService {
   }
 
   Future<void> _export(WsServer server, WsRequest request) async {
-    final backup = AppBackup(
-      createdAt: DateTime.now(),
-      articles: await _articles.loadArticles(),
-      folders: await _articles.loadFolders(),
-      settings: await _settings.loadSettings(),
-    );
+    final backup = await exportBackup();
     server.respond(
       request.clientId,
       WsMessage(
@@ -45,14 +43,21 @@ class BackupService {
     );
   }
 
+  Future<AppBackup> exportBackup() => _articles.readBackupSnapshot(
+    (articles, folders) async => AppBackup(
+      createdAt: DateTime.now(),
+      articles: articles,
+      folders: folders,
+      settings: await _settings.loadSettings(),
+    ),
+  );
+
   Future<void> _restore(WsServer server, WsRequest request) async {
     try {
       // 先完整解析，确认所有字段有效后再替换当前数据。
       final backup = AppBackup.fromJson(request.message.data);
 
-      await _articles.replaceFolders(backup.folders);
-      await _articles.replaceArticles(backup.articles);
-      await _settings.saveSettings(backup.settings);
+      await restoreBackup(backup);
       server.respond(
         request.clientId,
         WsMessage(
@@ -71,5 +76,25 @@ class BackupService {
         ),
       );
     }
+  }
+
+  /// Commit folders, manuscripts and settings together. A write failure leaves
+  /// the previous snapshot and settings cache intact, including annotations.
+  Future<void> restoreBackup(AppBackup backup) {
+    // Capture before entering either queue: callers cannot mutate a pending
+    // restore's lists while an earlier save is still finishing.
+    final data = <String, String>{
+      StorageConstants.foldersKey:
+          jsonEncode(backup.folders.map((folder) => folder.toJson()).toList()),
+      StorageConstants.articlesKey:
+          jsonEncode(backup.articles.map((article) => article.toJson()).toList()),
+    };
+    return _articles.runStorageTransaction(
+      (preferences) => _settings.restoreWithData(
+        backup.settings,
+        preferences: preferences,
+        data: data,
+      ),
+    );
   }
 }

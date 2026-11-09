@@ -190,17 +190,41 @@ class SettingsService {
     await _updateSettings((_) => settings);
   }
 
+  /// A complete backup replaces related data in one durable snapshot while
+  /// holding this queue. The caller holds the article/folder mutation queue.
+  Future<void> restoreWithData(
+    AppSettings settings, {
+    required AppPreferences preferences,
+    required Map<String, String> data,
+  }) async {
+    final captured = Map<String, String>.from(data);
+    await _updateSettings(
+      (_) => settings,
+      additionalValues: captured,
+      expectedPreferences: preferences,
+    );
+  }
+
   /// 串行完成读取、合并和落盘，避免局部更新与旧全量保存互相覆盖。
   Future<({AppSettings settings, int revision})> _updateSettings(
-    AppSettings Function(AppSettings current) update,
-  ) {
+    AppSettings Function(AppSettings current) update, {
+    Map<String, String> additionalValues = const {},
+    AppPreferences? expectedPreferences,
+  }) {
     final write = _pendingWrite.then((_) async {
+      if (expectedPreferences != null &&
+          !identical(expectedPreferences, _prefs)) {
+        throw StateError('稿件与设置没有使用同一存储，已中止恢复');
+      }
       final current = _readStoredSettings();
       final next = update(current);
-      final success = await _prefs.setString(
-        StorageConstants.settingsKey,
-        jsonEncode(next.toJson()),
-      );
+      final encoded = jsonEncode(next.toJson());
+      final success = additionalValues.isEmpty
+          ? await _prefs.setString(StorageConstants.settingsKey, encoded)
+          : await _prefs.setStrings({
+              ...additionalValues,
+              StorageConstants.settingsKey: encoded,
+            });
       if (!success) throw StateError('设置文件写入失败');
       _persistedSettings = next;
 

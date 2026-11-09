@@ -34,7 +34,10 @@ class _DelayedPreferences implements AppPreferences {
   String? getString(String key) => values[key];
 
   @override
-  Future<bool> setString(String key, String value) async {
+  Future<bool> setString(String key, String value) => setStrings({key: value});
+
+  @override
+  Future<bool> setStrings(Map<String, String> replacements) async {
     final barrier = _nextBarrier;
     _nextBarrier = null;
     activeWrites++;
@@ -46,8 +49,8 @@ class _DelayedPreferences implements AppPreferences {
         if (barrier.fail) throw StateError('测试磁盘写入失败');
         if (barrier.returnFalse) return false;
       }
-      values[key] = value;
-      writes.add(key);
+      values.addAll(replacements);
+      writes.addAll(replacements.keys);
       return true;
     } finally {
       activeWrites--;

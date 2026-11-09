@@ -14,6 +14,13 @@ class _MemoryPreferences implements AppPreferences {
     data[key] = value;
     return true;
   }
+
+  @override
+  Future<bool> setStrings(Map<String, String> values) async {
+    if (fail) return false;
+    data.addAll(values);
+    return true;
+  }
 }
 
 void main() {

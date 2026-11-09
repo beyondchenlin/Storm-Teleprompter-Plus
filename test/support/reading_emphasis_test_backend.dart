@@ -67,6 +67,10 @@ class ReadingEmphasisTestPreferences implements AppPreferences {
       activeWrites--;
     }
   }
+
+  @override
+  Future<bool> setStrings(Map<String, String> replacements) =>
+      throw UnsupportedError('该设置协议测试使用单键写入，批量恢复使用专门的存储替身');
 }
 
 class ReadingEmphasisTestServer extends WsServer {
