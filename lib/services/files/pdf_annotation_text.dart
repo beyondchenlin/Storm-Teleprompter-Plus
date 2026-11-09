@@ -7,7 +7,7 @@ String extractPdfRichAnnotationText(String rich) {
   late final XmlDocument document;
   try {
     document = XmlDocument.parse(rich.replaceAll('&nbsp;', '&#160;'));
-  } on XmlParserException {
+  } on XmlFormatException {
     // An unreadable rich body must survive verbatim for manual repair.
     return rich;
   }
