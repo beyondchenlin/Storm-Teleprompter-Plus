@@ -5,9 +5,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import 'reading_emphasis_text.dart';
 
-const Color readingAnnotationColor = Color(0xFF8BD1D0);
+const Color readingAnnotationColor = Color(ReadingAnnotationStyle.defaultColor);
 const double readingAnnotationLeaderAngle = 17.5;
 
 /// A selected range fragment on one visual row. Different logical ranges and
@@ -141,6 +142,7 @@ class ReadingAnnotationLayout {
   final ReadingTextLayout textLayout;
   final ReadingGlyphPainterCache glyphCache;
   final double leadingSpace;
+  final ReadingAnnotationStyle style;
   final List<_RangeEntry> _entries = [];
   final List<int> _prefixEnds = [];
   final LinkedHashMap<int, ReadingAnnotationRow> _rows = LinkedHashMap();
@@ -151,6 +153,7 @@ class ReadingAnnotationLayout {
     required this.textLayout,
     required List<ReadingAnnotation> annotations,
     required this.glyphCache,
+    this.style = const ReadingAnnotationStyle(),
     double leadingSpace = 0,
   }) : leadingSpace = leadingSpace.isFinite ? math.max(0, leadingSpace) : 0 {
     if (textLayout.graphemes.isEmpty) return;
@@ -257,8 +260,9 @@ class ReadingAnnotationLayout {
     if (!_hasAnnotationsInRow(index)) return false;
     for (final placement in textLayout.placementsForRow(index)) {
       final glyph = placement.grapheme;
-      // Match the label's existing 22% size and 8px readability cutoff.
-      if (textLayout.geometry.fontSizeFor(glyph.format) * .22 >= 8 &&
+      if (style.preferredFontSizeFor(
+            textLayout.geometry.fontSizeFor(glyph.format),
+          ) >= ReadingAnnotationStyle.minimumFontSize &&
           _intersecting(glyph.rawStart, glyph.rawEnd + 1).isNotEmpty) {
         return true;
       }
@@ -391,7 +395,7 @@ class ReadingAnnotationLayout {
     List<Rect> bodyBounds,
     List<Rect> occupied,
   ) {
-    final maximumFontSize = anchor.bodyFontSize * .22;
+    final maximumFontSize = style.preferredFontSizeFor(anchor.bodyFontSize);
     if (maximumFontSize < 8 || band.isEmpty) return null;
     final source = anchor.notes.first.text.trim().replaceAll('\r\n', '\n');
     final characters = source.characters;
@@ -411,17 +415,18 @@ class ReadingAnnotationLayout {
     ReadingAnnotationLabel? clearestPreview;
     final tip = anchor.frame.topCenter;
     for (final fontSize in fontSizes) {
-      final style = TextStyle(
+      final noteFontFamily = style.effectiveFontFamily(
+        textLayout.geometry.fontFamily,
+      );
+      final noteTextStyle = TextStyle(
         fontSize: fontSize,
         height: ui.kTextHeightNone,
-        color: readingAnnotationColor,
+        color: style.paintColor,
         fontWeight: FontWeight.w400,
-        fontFamily: textLayout.geometry.fontFamily.isEmpty
-            ? null
-            : textLayout.geometry.fontFamily,
+        fontFamily: noteFontFamily.isEmpty ? null : noteFontFamily,
       );
       final lineHeight = glyphCache
-          .painterFor('国', style, TextDirection.ltr)
+          .painterFor('国', noteTextStyle, TextDirection.ltr)
           .height;
       final maxLines = math.min(3, ((band.height - 2.5) / lineHeight).floor());
       if (maxLines < 1) continue;
@@ -430,7 +435,7 @@ class ReadingAnnotationLayout {
         final width = preferredWidth * factor;
         if (width < fontSize * 2) continue;
         final painter = TextPainter(
-          text: TextSpan(text: preview, style: style),
+          text: TextSpan(text: preview, style: noteTextStyle),
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.center,
           textScaler: TextScaler.noScaling,
@@ -545,6 +550,43 @@ class ReadingAnnotationLayout {
     return result.toList(growable: false);
   }
 
+  /// Explicitly bounded because playback can contain thousands of rows. The
+  /// local editor preview contains at most forty graphemes and uses this after
+  /// a frame to explain the size that actually fitted, rather than the slider
+  /// value alone. Measuring the summary never changes saved note preferences.
+  ReadingAnnotationDisplayStatus displayStatus({int maximumRows = 64}) {
+    var anchors = 0;
+    var labels = 0;
+    var reduced = 0;
+    var truncated = 0;
+    double? smallest;
+    double? largest;
+    final count = math.min(textLayout.rows.length, math.max(0, maximumRows));
+    for (var index = 0; index < count; index++) {
+      if (!_hasAnnotationsInRow(index)) continue;
+      final row = rowAt(index);
+      anchors += row.anchors.length;
+      labels += row.labels.length;
+      for (final label in row.labels) {
+        final size = label.painter.text!.style!.fontSize!;
+        smallest = smallest == null ? size : math.min(smallest, size);
+        largest = largest == null ? size : math.max(largest, size);
+        if (size + .01 < style.preferredFontSizeFor(label.anchor.bodyFontSize)) {
+          reduced++;
+        }
+        if (label.isTruncated) truncated++;
+      }
+    }
+    return ReadingAnnotationDisplayStatus(
+      anchorCount: anchors,
+      labelCount: labels,
+      reducedLabelCount: reduced,
+      truncatedLabelCount: truncated,
+      smallestFontSize: smallest,
+      largestFontSize: largest,
+    );
+  }
+
   void dispose() {
     for (final row in _rows.values) {
       row.dispose();
@@ -601,7 +643,7 @@ class ReadingAnnotationPainter extends CustomPainter {
     }
     canvas.clipRect(clip);
     final paint = Paint()
-      ..color = readingAnnotationColor.withValues(alpha: .9)
+      ..color = layout.style.paintColor.withValues(alpha: .9)
       ..strokeWidth = 1
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round

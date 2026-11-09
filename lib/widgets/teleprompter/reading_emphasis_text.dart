@@ -7,6 +7,7 @@ import 'package:flutter/semantics.dart';
 
 import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
 import 'reading_annotation_layer.dart';
 import 'reading_glyph_ink_cache.dart';
@@ -927,6 +928,7 @@ class ReadingEmphasisLine extends StatefulWidget {
   final double viewportHeight;
   final List<ReadingAnnotation> annotations;
   final bool showAnnotations;
+  final ReadingAnnotationStyle annotationStyle;
 
   /// Empty space already present above this authored line. It extends only
   /// the foreground paint layer; it never changes this widget's layout size.
@@ -948,6 +950,7 @@ class ReadingEmphasisLine extends StatefulWidget {
     this.viewportHeight = double.infinity,
     this.annotations = const [],
     this.showAnnotations = true,
+    this.annotationStyle = const ReadingAnnotationStyle(),
     this.annotationLeadingSpace = 0,
     this.handleAnnotationLabelTaps = true,
     this.onAnnotationsTap,
@@ -969,6 +972,12 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   int get debugLayoutBuildCount => _layoutBuildCount;
   @visibleForTesting
   ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
+
+  ReadingAnnotationDisplayStatus annotationDisplayStatus({int maximumRows = 64}) =>
+      widget.showAnnotations
+      ? _annotations?.displayStatus(maximumRows: maximumRows) ??
+            const ReadingAnnotationDisplayStatus()
+      : const ReadingAnnotationDisplayStatus();
 
   /// Reuse a mounted predecessor's immutable layout when another authored
   /// line borrows its empty tail. During a font/viewport update the parent can
@@ -1027,6 +1036,7 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
             annotations: widget.annotations,
             glyphCache: widget.glyphCache,
             leadingSpace: widget.annotationLeadingSpace,
+            style: widget.annotationStyle,
           );
   }
 
@@ -1063,6 +1073,7 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
       _createLayout();
     } else if (!identical(widget.annotations, oldWidget.annotations) ||
         widget.annotationLeadingSpace != oldWidget.annotationLeadingSpace ||
+        widget.annotationStyle != oldWidget.annotationStyle ||
         widget.glyphCache != oldWidget.glyphCache) {
       _createAnnotations();
     }

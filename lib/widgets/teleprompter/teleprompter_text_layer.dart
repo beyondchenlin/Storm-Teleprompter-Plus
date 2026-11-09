@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
@@ -77,6 +78,7 @@ class TeleprompterTextLayer extends StatefulWidget {
   final double currentCharScale;
   final List<ReadingAnnotation> annotations;
   final bool showAnnotations;
+  final ReadingAnnotationStyle annotationStyle;
 
   const TeleprompterTextLayer({
     super.key,
@@ -115,6 +117,7 @@ class TeleprompterTextLayer extends StatefulWidget {
     this.currentCharScale = AppSettings.defaultCurrentCharScale,
     this.annotations = const [],
     this.showAnnotations = true,
+    this.annotationStyle = const ReadingAnnotationStyle(),
   });
 
   @override
@@ -1129,6 +1132,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         viewportHeight: viewportHeight,
         annotations: _lineAnnotations[index],
         showAnnotations: widget.showAnnotations,
+        annotationStyle: widget.annotationStyle,
         annotationLeadingSpace:
             !widget.showAnnotations || _lineAnnotations[index].isEmpty
             ? 0
@@ -1256,7 +1260,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     double textWidth,
     double viewportHeight,
   ) {
-    if (_largestFontSize * _fontScale * .22 < 8) return 0;
+    if (widget.annotationStyle.preferredFontSizeFor(
+          _largestFontSize * _fontScale,
+        ) < ReadingAnnotationStyle.minimumFontSize) return 0;
     // The first line borrows from the existing scroll padding. Recompute it
     // after viewport/reading-line changes; no new padding is ever introduced.
     final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;

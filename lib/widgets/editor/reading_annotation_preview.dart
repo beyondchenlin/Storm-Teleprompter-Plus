@@ -4,10 +4,15 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
 import '../../services/text_parser.dart';
 import '../teleprompter/reading_emphasis_text.dart';
+import '../teleprompter/reading_annotation_layer.dart';
+
+typedef ReadingAnnotationPreviewStatus = ReadingAnnotationDisplayStatus;
 
 /// A live excerpt using the same body and annotation painters as playback.
 /// Source indices and rich-text formatting survive excerpting, so a preview
@@ -19,6 +24,11 @@ class ReadingAnnotationPreview extends StatefulWidget {
   final double height;
   final ValueChanged<ReadingAnnotation>? onNoteTap;
 
+  /// The active manuscript's appearance, including its background and body
+  /// geometry. Omitted only by legacy callers that request the compact sample.
+  final AppSettings? settings;
+  final ValueChanged<ReadingAnnotationPreviewStatus>? onLayoutStatus;
+
   const ReadingAnnotationPreview({
     super.key,
     required this.content,
@@ -26,6 +36,8 @@ class ReadingAnnotationPreview extends StatefulWidget {
     this.focusRawIndex,
     this.height = 230,
     this.onNoteTap,
+    this.settings,
+    this.onLayoutStatus,
   });
 
   @override
@@ -34,8 +46,8 @@ class ReadingAnnotationPreview extends StatefulWidget {
 }
 
 class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
-  static const double _fontSize = 48;
-  static const double _topSpace = 64;
+  static const double _legacyFontSize = 48;
+  static const double _legacyTopSpace = 64;
   final _lineKey = GlobalKey<ReadingEmphasisLineState>();
   final _glyphCache = ReadingGlyphPainterCache(capacity: 256);
   final _scrollController = ScrollController();
@@ -43,6 +55,71 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
   List<ScriptLine> _lines = const [];
   (ScriptLine, int, int)? _excerptKey;
   ScriptLine? _excerpt;
+  ScriptLine? _precedingLine;
+  bool _precedingIsAuthoredLine = false;
+  ReadingTextLayout? _precedingLayout;
+  bool _statusScheduled = false;
+  ReadingAnnotationPreviewStatus? _reportedStatus;
+
+  AppSettings get _settings => widget.settings ?? const AppSettings(
+    fontSize: _legacyFontSize,
+    lineHeight: 1.8,
+    teleprompterFontFamily: '',
+    defaultBold: false,
+    currentCharScale: 1,
+    currentCharColor: 0xFFFFE36C,
+    grayReadChars: false,
+  );
+
+  ReadingTextGeometry get _geometry => ReadingTextGeometry(
+    fontSize: _settings.fontSize,
+    lineHeight: math.max(1, _settings.lineHeight),
+    letterSpacing: _settings.letterSpacing,
+    fontFamily: _settings.teleprompterFontFamily,
+    defaultBold: _settings.defaultBold,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _glyphCache.inkCache.addListener(_onInkChanged);
+  }
+
+  @override
+  void didUpdateWidget(ReadingAnnotationPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // An inline callback acquires a new identity on every parent setState.
+    // Reset only for new preview inputs, otherwise status -> rebuild -> status
+    // would schedule an endless series of frames in the appearance dialog.
+    if (widget.settings != oldWidget.settings ||
+        widget.content != oldWidget.content ||
+        widget.focusRawIndex != oldWidget.focusRawIndex ||
+        (oldWidget.onLayoutStatus == null && widget.onLayoutStatus != null)) {
+      _reportedStatus = null;
+    }
+  }
+
+  void _onInkChanged() {
+    if (!mounted) return;
+    // A preceding authored line can donate newly measured trailing whitespace.
+    // The excerpt's body geometry itself stays unchanged.
+    if (widget.settings != null && _precedingLayout != null) setState(() {});
+    _scheduleStatus();
+  }
+
+  void _scheduleStatus() {
+    if (_statusScheduled || widget.onLayoutStatus == null) return;
+    _statusScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _statusScheduled = false;
+      if (!mounted) return;
+      final status = _lineKey.currentState?.annotationDisplayStatus() ??
+          const ReadingAnnotationPreviewStatus();
+      if (status == _reportedStatus) return;
+      _reportedStatus = status;
+      widget.onLayoutStatus?.call(status);
+    });
+  }
   Duration? _pointerStarted;
   Offset? _pointerStartPosition;
   int? _activePointer;
@@ -53,6 +130,8 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _precedingLayout?.dispose();
+    _glyphCache.inkCache.removeListener(_onInkChanged);
     _glyphCache.dispose();
     super.dispose();
   }
@@ -77,7 +156,7 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       if (focus < last.rawIndex + last.char.length) break;
     }
     if (source == null) return null;
-    final columns = (width / (_fontSize * readingEmphasisMaximumScale * 1.08))
+    final columns = (width / (_settings.fontSize * readingEmphasisMaximumScale * 1.08))
         .floor()
         .clamp(2, 28)
         .toInt();
@@ -111,14 +190,36 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
     if (window.isEmpty) return null;
     final start = window.first.$1;
     final end = window.last.$2;
+    _excerpt = _slice(source, start, end);
+    _precedingLayout?.dispose();
+    _precedingLayout = null;
+    _precedingIsAuthoredLine = false;
+    if (start > 0) {
+      // A bounded prefix retains the real preceding characters and rich styles.
+      // It supplies only trailing whitespace, never a synthetic tall note band.
+      _precedingLine = _tail(source, before: start);
+    } else {
+      final sourceIndex = _lines.indexOf(source);
+      _precedingIsAuthoredLine = sourceIndex > 0;
+      _precedingLine = sourceIndex > 0 ? _tail(_lines[sourceIndex - 1]) : null;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          _scrollController.hasClients &&
+          _scrollController.offset != 0) {
+        _scrollController.jumpTo(0);
+      }
+    });
+    return _excerpt;
+  }
+
+  ScriptLine _slice(ScriptLine source, int start, int end) {
     final characters = <ScriptCharacter>[];
-    offset = 0;
+    var offset = 0;
     for (final char in source.characters) {
       final next = offset + char.char.length;
       if (offset >= end) break;
       if (next > start) {
-        // Parser characters are UTF-16 units. The fallback also preserves the
-        // correct raw offset for legacy callers that provide a whole run.
         final from = math.max(0, start - offset);
         final to = math.min(char.char.length, end - offset);
         characters.add(
@@ -140,19 +241,50 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       }
       offset = next;
     }
-    _excerpt = ScriptLine(
+    return ScriptLine(
       characters: List.unmodifiable(characters),
       lineIndex: source.lineIndex,
       paragraph: source.paragraph,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted &&
-          _scrollController.hasClients &&
-          _scrollController.offset != 0) {
-        _scrollController.jumpTo(0);
-      }
-    });
-    return _excerpt;
+  }
+
+  ScriptLine _tail(ScriptLine source, {int? before}) {
+    final end = before ?? source.text.length;
+    final clusters = source.text.substring(0, end).characters;
+    final tail = clusters.skip(math.max(0, clusters.length - 80)).toString();
+    return _slice(source, end - tail.length, end);
+  }
+
+  double _leadingSpace(double width) {
+    if (widget.settings == null) return _legacyTopSpace - 4;
+    final geometry = _geometry;
+    final cap = geometry.fontSize * 1.2;
+    final preceding = _precedingLine;
+    if (preceding == null) {
+      // The document's first line can borrow the playback viewport's existing
+      // top padding. Preview it using this viewport's own reading-line padding.
+      final ratio = _settings.readingLineOffset > 0
+          ? _settings.readingLineOffset.clamp(0.0, 1.0)
+          : .5;
+      return math.min(cap, math.max(widget.height * .1, widget.height * ratio));
+    }
+    if (preceding.characters.isEmpty) return math.min(cap, geometry.emptyHeight + 4);
+    if (_precedingLayout?.geometry != geometry ||
+        _precedingLayout?.width != width ||
+        !identical(_precedingLayout?.line, preceding)) {
+      _precedingLayout?.dispose();
+      _precedingLayout = ReadingTextLayout(
+        line: preceding,
+        geometry: geometry,
+        width: width,
+        direction: TextDirection.ltr,
+      );
+    }
+    return math.min(
+      cap,
+      ReadingAnnotationLayout.trailingSpace(_precedingLayout!, _glyphCache) +
+          (_precedingIsAuthoredLine ? 4 : 0),
+    );
   }
 
   void _onPointerDown(PointerDownEvent event) {
@@ -208,6 +340,8 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
           : TextParser.parsePlainText(widget.content);
       _excerptKey = null;
     }
+    _scheduleStatus();
+    final settings = _settings;
     final focus = _focus();
     final focusedNotes = widget.annotations
         .where(
@@ -224,7 +358,7 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ColoredBox(
-          color: const Color(0xFF080909),
+          color: Color(settings.teleprompterBgColor),
           child: Listener(
             behavior: HitTestBehavior.opaque,
             onPointerDown: _onPointerDown,
@@ -243,30 +377,41 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
                     ),
                   );
                 }
+                final leadingSpace = _leadingSpace(width);
+                final topSpace = widget.settings == null
+                    ? _legacyTopSpace
+                    : math.max(12.0, leadingSpace + 4);
                 return Semantics(
                   label: '批注效果局部预览，点击标记字词或备注编辑',
                   child: SingleChildScrollView(
                     controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, _topSpace, 16, 20),
+                    padding: EdgeInsets.fromLTRB(16, topSpace, 16, 20),
                     child: ReadingEmphasisLine(
                       key: _lineKey,
                       line: excerpt,
-                      geometry: const ReadingTextGeometry(
-                        fontSize: _fontSize,
-                        lineHeight: 1.8,
-                      ),
+                      geometry: _geometry,
                       presentation: ReadingTextPresentation(
                         currentIndex: focusedNotes.isEmpty ? -1 : focus,
-                        currentCharScale: 1,
-                        currentCharColor: 0xFFFFE36C,
-                        textColor: 0xFFFFFFFF,
-                        grayReadChars: false,
+                        currentCharScale: settings.currentCharScale,
+                        currentCharColor: settings.currentCharColor,
+                        readCharColor: settings.readCharColor,
+                        textColor: settings.textColor == 0
+                            ? ThemeData.estimateBrightnessForColor(Color(settings.teleprompterBgColor)) == Brightness.dark
+                                ? 0xFFFFFFFF
+                                : 0xFF000000
+                            : settings.textColor,
+                        enabled: settings.readingEmphasisEnabled,
+                        continuous: settings.isContinuousScroll,
+                        highlightCurrentChar: settings.highlightCurrentChar,
+                        underlineCurrentChar: settings.underlineCurrentChar,
+                        grayReadChars: settings.grayReadChars,
                       ),
                       glyphCache: _glyphCache,
                       width: width,
                       direction: TextDirection.ltr,
                       annotations: focusedNotes,
-                      annotationLeadingSpace: _topSpace - 4,
+                      annotationLeadingSpace: leadingSpace,
+                      annotationStyle: ReadingAnnotationStyle.fromSettings(settings),
                       handleAnnotationLabelTaps: false,
                       onAnnotationsTap: widget.onNoteTap == null
                           ? null
