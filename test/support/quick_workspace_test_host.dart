@@ -27,6 +27,7 @@ class QuickTestArticles extends ArticleProvider {
   @override
   Future<Article?> createArticle({
     List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     required String title,
     String content = '',
     String? folderId,
@@ -38,6 +39,7 @@ class QuickTestArticles extends ArticleProvider {
       title: title,
       content: content,
       annotations: annotations,
+      teleprompterSettings: teleprompterSettings,
       folderId: folderId,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -50,6 +52,7 @@ class QuickTestArticles extends ArticleProvider {
   Future<Article?> updateArticle(
     String id, {
     List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
     String? title,
     String? content,
   }) async {
@@ -57,7 +60,12 @@ class QuickTestArticles extends ArticleProvider {
     if (fail) return null;
     final article = articles
         .firstWhere((a) => a.id == id)
-        .copyWith(title: title, content: content, annotations: annotations);
+        .copyWith(
+          title: title,
+          content: content,
+          annotations: annotations,
+          teleprompterSettings: teleprompterSettings,
+        );
     upsertArticle(article);
     return article;
   }

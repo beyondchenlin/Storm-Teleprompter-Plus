@@ -19,6 +19,7 @@ class _DelayedArticleProvider extends ArticleProvider {
   Future<Article?> updateArticle(
     String id, {
     List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
     String? title,
     String? content,
   }) => completer.future;

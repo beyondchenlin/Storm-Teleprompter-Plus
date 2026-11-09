@@ -69,9 +69,11 @@ class ArticleProvider with ChangeNotifier {
     required String title,
     required String content,
     List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     String? folderId,
   }) async {
     try {
+      _error = null;
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleCreate,
@@ -80,8 +82,12 @@ class ArticleProvider with ChangeNotifier {
             'content': content,
             'annotations': annotations.map((note) => note.toJson()).toList(),
             'folderId': ?folderId,
+            'teleprompterSettings': ?teleprompterSettings,
           },
         );
+        if (response.type == WsMessageType.error) {
+          throw StateError(response.data['message'] as String? ?? '保存稿件失败');
+        }
         if (response.type == WsMessageType.articleCreateResponse) {
           final article = Article.fromJson(
             response.data['article'] as Map<String, dynamic>,
@@ -105,8 +111,10 @@ class ArticleProvider with ChangeNotifier {
     String? title,
     String? content,
     List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
   }) async {
     try {
+      _error = null;
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleUpdate,
@@ -114,10 +122,14 @@ class ArticleProvider with ChangeNotifier {
             'id': id,
             'title': ?title,
             'content': ?content,
+            'teleprompterSettings': ?teleprompterSettings,
             if (annotations != null)
               'annotations': annotations.map((note) => note.toJson()).toList(),
           },
         );
+        if (response.type == WsMessageType.error) {
+          throw StateError(response.data['message'] as String? ?? '保存稿件失败');
+        }
         if (response.type == WsMessageType.articleUpdateResponse &&
             response.data['success'] == true) {
           final article = Article.fromJson(

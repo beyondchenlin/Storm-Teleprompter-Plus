@@ -22,6 +22,16 @@ class AppSettings {
   static const minCurrentCharScale = 1.0;
   static const maxCurrentCharScale = 1.15;
   static const defaultCurrentCharScale = 1.10;
+  static const defaultAnnotationColor = 0xFF8BD1D0;
+  static const defaultAnnotationFontSize = 0.0;
+  static const minAnnotationFontSize = 8.0;
+  static const maxAnnotationFontSize = 36.0;
+
+  static const annotationAppearanceKeys = <String>{
+    'annotationFontFamily',
+    'annotationFontSize',
+    'annotationColor',
+  };
 
   /// 只属于应用全局设置，不允许稿件覆盖或写入稿件快照。
   static const readingEmphasisKeys = <String>{
@@ -62,6 +72,15 @@ class AppSettings {
 
   /// Paint-only coaching notes; saved per manuscript and synced with the session.
   final bool showAnnotations;
+
+  /// 空字符串跟随正文；批注字体不改变正文排版。
+  final String annotationFontFamily;
+
+  /// 首选逻辑像素字号。0 保留原来的自动字号，空间不足时由渲染器收敛。
+  final double annotationFontSize;
+
+  /// 备注文字、字词框和引线共用的不透明颜色。
+  final int annotationColor;
 
   /// 远程接收端的全屏启动偏好；本地提词始终以普通窗口进入。
   final bool fullScreenMode;
@@ -178,6 +197,9 @@ class AppSettings {
     this.pixelsPerSecond = 20,
     this.mirrorMode = false,
     this.showAnnotations = true,
+    this.annotationFontFamily = '',
+    this.annotationFontSize = defaultAnnotationFontSize,
+    this.annotationColor = defaultAnnotationColor,
     this.fullScreenMode = false,
     this.autoHideUI = true,
     this.autoHideDelaySeconds = 3,
@@ -243,7 +265,16 @@ class AppSettings {
       ),
       pixelsPerSecond: (json['pixelsPerSecond'] as num?)?.toDouble() ?? 20,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
-      showAnnotations: json['showAnnotations'] as bool? ?? true,
+      showAnnotations: json['showAnnotations'] is bool
+          ? json['showAnnotations'] as bool
+          : true,
+      annotationFontFamily: normalizeAnnotationFontFamily(
+        json['annotationFontFamily'],
+      ),
+      annotationFontSize: normalizeAnnotationFontSize(
+        json['annotationFontSize'],
+      ),
+      annotationColor: normalizeAnnotationColor(json['annotationColor']),
       fullScreenMode: json['fullScreenMode'] as bool? ?? false,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
       autoHideDelaySeconds: json['autoHideDelaySeconds'] as int? ?? 3,
@@ -311,6 +342,7 @@ class AppSettings {
       'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
       'showAnnotations': showAnnotations,
+      ...toAnnotationAppearanceMap(),
       'fullScreenMode': fullScreenMode,
       'autoHideUI': autoHideUI,
       'autoHideDelaySeconds': autoHideDelaySeconds,
@@ -360,6 +392,9 @@ class AppSettings {
     double? pixelsPerSecond,
     bool? mirrorMode,
     bool? showAnnotations,
+    String? annotationFontFamily,
+    double? annotationFontSize,
+    int? annotationColor,
     bool? fullScreenMode,
     bool? autoHideUI,
     int? autoHideDelaySeconds,
@@ -409,6 +444,15 @@ class AppSettings {
       pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
       mirrorMode: mirrorMode ?? this.mirrorMode,
       showAnnotations: showAnnotations ?? this.showAnnotations,
+      annotationFontFamily: normalizeAnnotationFontFamily(
+        annotationFontFamily ?? this.annotationFontFamily,
+      ),
+      annotationFontSize: normalizeAnnotationFontSize(
+        annotationFontSize ?? this.annotationFontSize,
+      ),
+      annotationColor: normalizeAnnotationColor(
+        annotationColor ?? this.annotationColor,
+      ),
       fullScreenMode: fullScreenMode ?? this.fullScreenMode,
       autoHideUI: autoHideUI ?? this.autoHideUI,
       autoHideDelaySeconds: autoHideDelaySeconds ?? this.autoHideDelaySeconds,
@@ -487,7 +531,21 @@ class AppSettings {
       pixelsPerSecond:
           (overrides['pixelsPerSecond'] as num?)?.toDouble() ?? pixelsPerSecond,
       mirrorMode: overrides['mirrorMode'] as bool? ?? mirrorMode,
-      showAnnotations: overrides['showAnnotations'] as bool? ?? showAnnotations,
+      showAnnotations: overrides['showAnnotations'] is bool
+          ? overrides['showAnnotations'] as bool
+          : showAnnotations,
+      annotationFontFamily: normalizeAnnotationFontFamily(
+        overrides['annotationFontFamily'],
+        fallback: annotationFontFamily,
+      ),
+      annotationFontSize: normalizeAnnotationFontSize(
+        overrides['annotationFontSize'],
+        fallback: annotationFontSize,
+      ),
+      annotationColor: normalizeAnnotationColor(
+        overrides['annotationColor'],
+        fallback: annotationColor,
+      ),
       fullScreenMode: overrides['fullScreenMode'] as bool? ?? fullScreenMode,
       autoHideUI: overrides['autoHideUI'] as bool? ?? autoHideUI,
       autoHideDelaySeconds:
@@ -558,6 +616,7 @@ class AppSettings {
       'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
       'showAnnotations': showAnnotations,
+      ...toAnnotationAppearanceMap(),
       'paddingX': paddingX,
       'readingLineOffset': readingLineOffset,
       'highlightCurrentChar': highlightCurrentChar,
@@ -582,6 +641,43 @@ class AppSettings {
     ...toTeleprompterMap(),
     ...toReadingEmphasisMap(),
   };
+
+  Map<String, dynamic> toAnnotationAppearanceMap() => {
+    'annotationFontFamily': annotationFontFamily,
+    'annotationFontSize': annotationFontSize,
+    'annotationColor': annotationColor,
+  };
+
+  /// 字体来源于本机列表或稿件备份；损坏的单项不能使整份设置加载失败。
+  static String normalizeAnnotationFontFamily(
+    Object? value, {
+    String fallback = '',
+  }) {
+    if (value is! String) return fallback;
+    final family = value.trim();
+    if (family.length > 200 || RegExp(r'[\x00-\x1f\x7f]').hasMatch(family)) {
+      return fallback;
+    }
+    return family;
+  }
+
+  static double normalizeAnnotationFontSize(
+    Object? value, {
+    double fallback = defaultAnnotationFontSize,
+  }) {
+    if (value is! num || !value.isFinite || value < 0) return fallback;
+    if (value == 0) return defaultAnnotationFontSize;
+    return value.clamp(minAnnotationFontSize, maxAnnotationFontSize).toDouble();
+  }
+
+  static int normalizeAnnotationColor(
+    Object? value, {
+    int fallback = defaultAnnotationColor,
+  }) {
+    if (value is! int || value < 0 || value > 0xFFFFFFFF) return fallback;
+    // 不允许意外的透明通道把备注、字词框和引线一并隐藏。
+    return value | 0xFF000000;
+  }
 
   Map<String, dynamic> toReadingEmphasisMap() => {
     'readingEmphasisEnabled': readingEmphasisEnabled,

@@ -149,6 +149,19 @@ class SettingsProvider with ChangeNotifier {
         changed = true;
       }
     }
+    // 批注外观与显示开关一起同步，但不改变从端自设的正文布局。
+    final appearance = mergedSettings
+        .mergeOverrides({
+          for (final key in AppSettings.annotationAppearanceKeys)
+            if (settings.containsKey(key)) key: settings[key],
+        })
+        .toAnnotationAppearanceMap();
+    for (final key in AppSettings.annotationAppearanceKeys) {
+      if (settings.containsKey(key) && _articleOverrides[key] != appearance[key]) {
+        _articleOverrides[key] = appearance[key];
+        changed = true;
+      }
+    }
     if (changed) notifyListeners();
   }
 
@@ -188,6 +201,65 @@ class SettingsProvider with ChangeNotifier {
 
   Future<void> setShowAnnotations(bool value) =>
       _setAndSave(overrideData: {'showAnnotations': value});
+
+  Future<void> setAnnotationFontFamily(String value) =>
+      setAnnotationAppearance(fontFamily: value);
+
+  Future<void> setAnnotationFontSize(double value) =>
+      setAnnotationAppearance(fontSize: value);
+
+  Future<void> setAnnotationColor(int value) =>
+      setAnnotationAppearance(color: value);
+
+  /// 一次更新与保存，避免恢复默认时留下三项不同步的中间快照。
+  Future<void> setAnnotationAppearance({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) {
+    final patch = _annotationAppearancePatch(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: color,
+    );
+    if (patch.isEmpty) return Future<void>.value();
+    return _setAndSave(overrideData: patch);
+  }
+
+  /// 应用设置页只更改新稿默认值，播放中的稿件快照保持独立。
+  Future<void> setDefaultAnnotationAppearance({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) async {
+    final patch = _annotationAppearancePatch(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: color,
+    );
+    if (patch.isEmpty) return;
+    _settings = _settings.mergeOverrides(patch);
+    notifyListeners();
+    await _saveSettings();
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  Map<String, dynamic> _annotationAppearancePatch({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) => {
+    if (fontFamily != null)
+      'annotationFontFamily': AppSettings.normalizeAnnotationFontFamily(fontFamily),
+    if (fontSize != null)
+      'annotationFontSize': AppSettings.normalizeAnnotationFontSize(fontSize),
+    if (color != null)
+      'annotationColor': AppSettings.normalizeAnnotationColor(color),
+  };
+
+  Future<void> resetAnnotationAppearance() => _setAndSave(
+    overrideData: const AppSettings().toAnnotationAppearanceMap(),
+  );
 
   void _syncTeleprompterSettingsToBackend() {
     final connection = _connection;
