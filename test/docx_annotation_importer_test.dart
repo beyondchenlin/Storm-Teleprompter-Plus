@@ -18,6 +18,34 @@ const _officeRelationship =
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 void main() {
+  test('imports the actual WPS-saved Chinese fixture with its verified selections', () async {
+    final result = await importDocx(
+      File('test/fixtures/annotations/wps_actual_annotations.docx'),
+    );
+    final expected = jsonDecode(
+      await File('test/fixtures/annotations/wps_actual_annotations.expected.json')
+          .readAsString(),
+    ) as Map<String, dynamic>;
+    final comments = (expected['comments'] as List).cast<Map<String, dynamic>>();
+    expect(result.annotations, hasLength(4));
+    expect(result.warnings, isEmpty);
+    expect(
+      AnnotationAnchors.bodyText(result.content),
+      (expected['requestedStoryText'] as String).replaceAll('\r', ''),
+    );
+    final notes = {for (final note in result.annotations) note.id: note};
+    for (final comment in comments) {
+      final note = notes['docx:${(comment['ordinal'] as int) - 1}']!;
+      expect(note.text, comment['requestedNote']);
+      _expectRange(
+        note,
+        comment['rawStart'] as int,
+        comment['rawEnd'] as int,
+        comment['rawQuote'] as String,
+      );
+    }
+  });
+
   test('imports exact single-word, repeated-word, cross-paragraph and table ranges', () async {
     final fixture = File('test/fixtures/annotations/docx_word_ranges.docx');
     final result = await ImportService().importFile(fixture.path);

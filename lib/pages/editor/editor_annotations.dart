@@ -2,6 +2,109 @@ part of '../editor_page.dart';
 
 /// Selection-based coaching notes, including repair of imported unbound notes.
 mixin EditorAnnotations on State<EditorPage>, EditorLogic {
+  bool showAnnotationPreview = true;
+  String? _previewAnnotationId;
+
+  void toggleAnnotationPreview() => setState(() => showAnnotationPreview = !showAnnotationPreview);
+
+  ReadingAnnotation? get _focusedPreviewNote =>
+      _annotations.where((note) => note.id == _previewAnnotationId && note.isAnchored).firstOrNull ??
+      _annotations.where((note) => note.isAnchored).firstOrNull;
+
+  Future<void> editExistingAnnotation(ReadingAnnotation note) async {
+    _previewAnnotationId = note.id;
+    final text = await _editAnnotationText(text: note.text,
+      quote: note.ranges.map((range) => range.quote).join(' / '),
+      ranges: note.isAnchored ? note.ranges : const [], editingId: note.id);
+    if (!mounted || text == null) return;
+    _annotations = [for (final item in _annotations)
+      if (item.id == note.id) item.copyWith(text: text) else item];
+    _markChanged();
+  }
+
+  Widget _annotationPreviewPanel() => Column(
+    children: [
+      SizedBox(height: 34, child: Row(children: [
+        const SizedBox(width: 12),
+        const Expanded(child: Text('提词效果 · 点击框选字词可修改批注', style: TextStyle(fontSize: 12))),
+        IconButton(tooltip: '收起预览', iconSize: 18,
+          onPressed: toggleAnnotationPreview, icon: const Icon(Icons.close)),
+      ])),
+      SizedBox(height: 36, child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        children: [for (final note in _annotations) Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ActionChip(
+            visualDensity: VisualDensity.compact,
+            avatar: Icon(note.isAnchored ? Icons.comment_outlined : Icons.error_outline, size: 14),
+            label: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(note.isAnchored
+                ? '${note.ranges.map((range) => range.quote).join(' / ')} · ${note.text}'
+                : '待定位 · ${note.text}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+            onPressed: () {
+              if (!note.isAnchored) { unawaited(manageAnnotations()); return; }
+              setState(() => _previewAnnotationId = note.id);
+              _selectAnnotation(note);
+            },
+          ),
+        )],
+      )),
+      Expanded(child: LayoutBuilder(builder: (context, constraints) => ReadingAnnotationPreview(
+        content: contentController.text,
+        annotations: _focusedPreviewNote == null ? const [] : [_focusedPreviewNote!],
+        focusRawIndex: _focusedPreviewNote?.ranges.first.start,
+        height: constraints.maxHeight,
+        onNoteTap: editExistingAnnotation,
+      ))),
+    ],
+  );
+
+  Widget buildAnnotationWorkspace(Widget editor) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (_annotations.isEmpty || !showAnnotationPreview) return editor;
+      if (constraints.maxWidth >= 1040 && constraints.maxHeight >= 300) {
+        return Row(children: [
+          Expanded(child: editor),
+          const VerticalDivider(width: 1),
+          SizedBox(width: 440, child: _annotationPreviewPanel()),
+        ]);
+      }
+      if (constraints.maxHeight >= 380) {
+        return Column(children: [
+          Expanded(child: editor),
+          const Divider(height: 1),
+          SizedBox(height: 230, child: _annotationPreviewPanel()),
+        ]);
+      }
+      return Column(children: [
+        Expanded(child: editor),
+        TextButton.icon(onPressed: _showCompactAnnotationPreview,
+          icon: const Icon(Icons.preview_outlined), label: Text('查看 ${_annotations.length} 条批注的提词效果')),
+      ]);
+    },
+  );
+
+  Future<void> _showCompactAnnotationPreview() async {
+    final note = _focusedPreviewNote;
+    if (note == null) { await manageAnnotations(); return; }
+    final selected = await showDialog<ReadingAnnotation>(context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('提词效果局部预览'),
+        content: SizedBox(width: 680, child: ReadingAnnotationPreview(
+          content: contentController.text, annotations: [note],
+          focusRawIndex: note.ranges.first.start,
+          height: MediaQuery.sizeOf(context).height * .5,
+          onNoteTap: (item) => Navigator.pop(context, item),
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+          FilledButton(onPressed: () => Navigator.pop(context, note), child: const Text('编辑批注')),
+        ],
+      ));
+    if (mounted && selected != null) await editExistingAnnotation(selected);
+  }
+
   AnnotationRange? _selectedAnnotationRange() {
     // Commit the editor's normalized body before translating its newline-based
     // selection offsets into the teleprompter's newline-free HTML offsets.
@@ -18,15 +121,16 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
         ? range : null;
   }
 
-  Future<String?> _editAnnotationText({String text = '', String? quote}) async {
+  Future<String?> _editAnnotationText({String text = '', String? quote, List<AnnotationRange> ranges = const [], String? editingId}) async {
     final controller = TextEditingController(text: text);
     try {
       return await showSettledDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('朗读批注'),
+          scrollable: true,
           content: SizedBox(
-            width: 420,
+            width: 680,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,6 +153,30 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
                     helperMaxLines: 2,
                   ),
                 ),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 4, children: [
+                  for (final cue in ['重读', '停一秒', '放慢语速', '语气上扬'])
+                    ActionChip(label: Text(cue), onPressed: () {
+                      controller.text = cue;
+                      controller.selection = TextSelection.collapsed(offset: cue.length);
+                    }),
+                ]),
+                const SizedBox(height: 12),
+                if (ranges.isNotEmpty) ...[
+                  const Align(alignment: Alignment.centerLeft, child: Text('实时局部预览', style: TextStyle(fontSize: 12))),
+                  const SizedBox(height: 6),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: controller,
+                    builder: (context, value, _) => ReadingAnnotationPreview(
+                      key: const ValueKey('live-annotation-preview'),
+                      content: contentController.text,
+                      annotations: [ReadingAnnotation(id: 'preview-draft', text: value.text, ranges: ranges)],
+                      onNoteTap: (_) {},
+                      focusRawIndex: ranges.first.start,
+                      height: 190,
+                    ),
+                  ),
+                ] else const Text('绑定到原文字词后，这里会显示提词效果。'),
               ],
             ),
           ),
@@ -77,10 +205,12 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
       );
       return;
     }
-    final value = await _editAnnotationText(quote: range.quote);
+    final value = await _editAnnotationText(quote: range.quote, ranges: [range]);
     if (!mounted || value == null) return;
+    _previewAnnotationId = 'manual-${DateTime.now().microsecondsSinceEpoch}';
+    showAnnotationPreview = true;
     _annotations = [..._annotations, ReadingAnnotation(
-      id: 'manual-${DateTime.now().microsecondsSinceEpoch}', text: value, ranges: [range],
+      id: _previewAnnotationId!, text: value, ranges: [range],
     )];
     _markChanged();
   }
@@ -157,7 +287,8 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
                                 }, child: const Text('绑定到所选字词')),
                               TextButton(onPressed: () async {
                                 final value = await _editAnnotationText(text: note.text,
-                                  quote: note.ranges.map((r) => r.quote).join(' / '));
+                                  quote: note.ranges.map((r) => r.quote).join(' / '),
+                                  ranges: note.isAnchored ? note.ranges : const [], editingId: note.id);
                                 if (!mounted || !dialogContext.mounted || value == null) return;
                                 updateNotes([for (final item in _annotations)
                                   if (identical(item, note)) item.copyWith(text: value) else item]);

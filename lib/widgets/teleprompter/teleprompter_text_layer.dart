@@ -186,6 +186,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   List<List<ReadingAnnotation>> _lineAnnotations = const [];
   final Map<int, double> _annotationLeadingSpaces = {};
   bool _annotationTapHandled = false;
+  ({ReadingEmphasisLineState state, Offset position, Duration time, int pointer})?
+      _annotationTapCandidate;
+  bool _annotationPointerMoved = false;
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
   List<ScriptLine>? _intrinsicWidthLines;
@@ -983,6 +986,12 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
         return Listener(
           onPointerDown: _handleAnnotationPointerDown,
+          onPointerMove: _handleAnnotationPointerMove,
+          onPointerUp: _handleAnnotationPointerUp,
+          onPointerCancel: (_) {
+            _annotationTapCandidate = null;
+            _annotationTapHandled = false;
+          },
           child: ClipRect(
           child: Transform(
             alignment: Alignment.center,
@@ -1111,6 +1120,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   void _handleAnnotationPointerDown(PointerDownEvent event) {
     _annotationTapHandled = false;
+    _annotationTapCandidate = null;
+    _annotationPointerMoved = false;
     if (!widget.showAnnotations ||
         widget.annotations.isEmpty ||
         event.buttons != kPrimaryButton ||
@@ -1126,10 +1137,33 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
       final state = _ReadingLineKey(widget.lines[index], this).currentState;
       final box = state?.context.findRenderObject();
       if (state != null && box is RenderBox &&
-          state.openAnnotationLabelAt(box.globalToLocal(event.position))) {
+          state.annotationsAt(box.globalToLocal(event.position), labelsOnly: true).isNotEmpty) {
         _annotationTapHandled = true;
+        _annotationTapCandidate = (
+          state: state, position: event.position, time: event.timeStamp, pointer: event.pointer,
+        );
         return;
       }
+    }
+  }
+
+  void _handleAnnotationPointerMove(PointerMoveEvent event) {
+    final candidate = _annotationTapCandidate;
+    if (candidate != null && candidate.pointer == event.pointer &&
+        (event.position - candidate.position).distance > kTouchSlop) {
+      _annotationPointerMoved = true;
+    }
+  }
+
+  void _handleAnnotationPointerUp(PointerUpEvent event) {
+    final candidate = _annotationTapCandidate;
+    if (candidate == null || candidate.pointer != event.pointer) return;
+    _annotationTapCandidate = null;
+    if (_annotationPointerMoved || !candidate.state.mounted ||
+        event.timeStamp - candidate.time >= kLongPressTimeout) return;
+    final box = candidate.state.context.findRenderObject();
+    if (box is RenderBox) {
+      candidate.state.openAnnotationLabelAt(box.globalToLocal(event.position));
     }
   }
 

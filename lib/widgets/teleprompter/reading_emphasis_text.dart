@@ -840,10 +840,17 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
 
   /// The scroll viewport also calls this for labels painted into the preceding
   /// line's existing whitespace, which lies outside this render box's hit area.
-  bool openAnnotationLabelAt(Offset position) {
-    if (!widget.showAnnotations) return false;
-    final notes = _annotations?.notesAt(position, labelsOnly: true);
-    if (notes == null || notes.isEmpty) return false;
+  bool openAnnotationLabelAt(Offset position) =>
+      openAnnotationsAt(position, labelsOnly: true);
+
+  List<ReadingAnnotation> annotationsAt(Offset position, {bool labelsOnly = false}) =>
+      widget.showAnnotations
+          ? _annotations?.notesAt(position, labelsOnly: labelsOnly) ?? const []
+          : const [];
+
+  bool openAnnotationsAt(Offset position, {bool labelsOnly = false}) {
+    final notes = annotationsAt(position, labelsOnly: labelsOnly);
+    if (notes.isEmpty) return false;
     _showNotes(notes);
     return true;
   }

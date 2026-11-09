@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/models/reading_annotation.dart';
 import 'package:storm_teleprompter_plus/models/script_character.dart';
 import 'package:storm_teleprompter_plus/services/text_parser.dart';
+import 'package:storm_teleprompter_plus/widgets/editor/reading_annotation_preview.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_annotation_layer.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_emphasis_text.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/teleprompter_text_layer.dart';
@@ -273,6 +274,7 @@ void main() {
     final annotations = [_note(text, 2, 4, full)];
     final key = GlobalKey<ReadingEmphasisLineState>();
     final cache = ReadingGlyphPainterCache();
+    var seeks = 0;
     await tester.pumpWidget(_lineHost(
       lineKey: key,
       line: line,
@@ -281,6 +283,7 @@ void main() {
       show: true,
       lineHeight: 1,
       mirror: true,
+      onTap: (_) => seeks++,
     ));
     final row = key.currentState!.debugAnnotationLayout!.rowAt(0);
     expect(row.labels, isEmpty);
@@ -289,11 +292,90 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(tester.widget<SelectableText>(find.byType(SelectableText)).data, full);
+    expect(seeks, 0, reason: '长按查看不能先跳到被按住的词');
     await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     await tester.pumpWidget(const SizedBox());
     cache.dispose();
+  });
+
+  testWidgets('首行与上一人工行留白中的备注可直接点击，镜像后也不触发正文跳读', (tester) async {
+    const text = 'abcdefgh\nijklmnop';
+    final lines = TextParser.parsePlainText(text);
+    final annotations = [_note(text, 2, 3, '重读'), _note(text, 11, 12, '停顿')];
+    final controller = ScrollController();
+    var seeks = 0;
+    for (final mirror in [false, true]) {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TeleprompterTextLayer(
+        scrollController: controller,
+        lines: lines,
+        currentIndex: 0,
+        fontSize: 64,
+        lineHeight: 1.5,
+        mirrorMode: mirror,
+        continuous: true,
+        annotations: annotations,
+        onCharTap: (_) => seeks++,
+      ))));
+      await tester.pumpAndSettle();
+      final states = tester.stateList<ReadingEmphasisLineState>(find.byType(ReadingEmphasisLine)).toList();
+      expect(states, hasLength(2));
+      for (final state in states) {
+        final label = state.debugAnnotationLayout!.rowAt(0).labels.single;
+        expect(label.rect.center.dy, lessThan(0), reason: '必须实际点击正文盒以外的借位备注');
+        final box = state.context.findRenderObject()! as RenderBox;
+        await tester.tapAt(box.localToGlobal(label.rect.center));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(seeks, 0);
+        await tester.tap(find.text('关闭'));
+        await tester.pumpAndSettle();
+      }
+    }
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('实时预览截取远处完整字素并保留原索引，点击词框或上方备注只回调目标批注', (tester) async {
+    final text = '${List.filled(1000, '原文内容').join()}👩🏽‍💻重点知识和后面的解释';
+    final focus = text.indexOf('重点');
+    final target = _note(text, focus, focus + 2, '重读', id: 'target');
+    final unrelated = _note(text, 0, 2, '先停顿', id: 'unrelated');
+    final tapped = <ReadingAnnotation>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(
+      width: 650,
+      child: ReadingAnnotationPreview(
+        content: text,
+        annotations: [unrelated, target],
+        focusRawIndex: focus,
+        onNoteTap: tapped.add,
+      ),
+    ))));
+    await tester.pump();
+    final line = tester.widget<ReadingEmphasisLine>(find.byType(ReadingEmphasisLine));
+    expect(line.line.characters.first.rawIndex, greaterThan(focus - 30));
+    expect(line.line.text, contains('👩🏽‍💻'));
+    expect(line.line.text, contains('重点'));
+    expect(line.annotations, [target]);
+    final state = tester.state<ReadingEmphasisLineState>(find.byType(ReadingEmphasisLine));
+    final row = state.debugAnnotationLayout!.rowAt(0);
+    final box = state.context.findRenderObject()! as RenderBox;
+    final drag = await tester.startGesture(box.localToGlobal(row.anchors.single.frame.center));
+    await drag.moveBy(const Offset(25, 0));
+    await drag.moveBy(const Offset(-25, 0));
+    await drag.up();
+    await tester.pump();
+    expect(tapped, isEmpty, reason: '短距离拖动后回到批注框也不能误打开编辑');
+    await tester.tapAt(box.localToGlobal(row.anchors.single.frame.center));
+    await tester.pump();
+    expect(tapped, [target]);
+    await tester.tapAt(box.localToGlobal(row.labels.single.rect.center));
+    await tester.pump();
+    expect(tapped, [target, target]);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('批注显隐和增删均不重建正文测量或改变滚动位置与范围', (tester) async {

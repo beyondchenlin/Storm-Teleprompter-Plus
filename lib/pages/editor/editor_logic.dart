@@ -8,6 +8,7 @@ mixin EditorLogic on State<EditorPage> {
   late final TextEditingController replaceController;
   late final quill.QuillController quillController;
   late final FocusNode editorFocusNode;
+  final GlobalKey quillEditorKey = GlobalKey(debugLabel: 'PersistentArticleEditor');
   late final FocusNode findFocusNode;
   late ArticleProvider _articleProvider;
 
@@ -729,15 +730,7 @@ mixin EditorLogic on State<EditorPage> {
     return sanitized.isEmpty ? null : sanitized;
   }
 
-  String _decodeHtml(String text) {
-    return text
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&amp;', '&');
-  }
+  String _decodeHtml(String text) => TextParser.decodeHtmlEntities(text);
 
   String _normalizeFontSize(String value) {
     final trimmed = value.trim().toLowerCase();

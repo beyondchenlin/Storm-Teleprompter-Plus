@@ -29,6 +29,7 @@ import '../widgets/common/settled_dialog.dart';
 import '../widgets/editor/quick_mode_action_button.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/editor/editor_toolbar.dart';
+import '../widgets/editor/reading_annotation_preview.dart';
 import '../widgets/editor/editor_toolbar_style.dart';
 import 'teleprompter_page.dart';
 
@@ -183,6 +184,8 @@ class EditorPageState extends State<EditorPage>
           manageAnnotations,
           selected: annotations.isNotEmpty,
         ),
+        if (annotations.isNotEmpty)
+          _buildFormatButton(Icons.preview_outlined, '显示或收起批注预览', toggleAnnotationPreview, selected: showAnnotationPreview),
         _buildFormatButton(Icons.vertical_align_top, '删除空行', removeEmptyLines),
         _buildFormatButton(
           Icons.format_indent_decrease,
@@ -258,7 +261,8 @@ class EditorPageState extends State<EditorPage>
           ),
           Divider(height: 1, color: AppColors.borderLightFor(context)),
           Expanded(
-            child: quill.QuillEditor.basic(
+            child: buildAnnotationWorkspace(quill.QuillEditor.basic(
+              key: quillEditorKey,
               controller: quillController,
               focusNode: editorFocusNode,
               config: quill.QuillEditorConfig(
@@ -280,7 +284,7 @@ class EditorPageState extends State<EditorPage>
                   color: editorTextColor,
                 ),
               ),
-            ),
+            )),
           ),
         ],
       ),

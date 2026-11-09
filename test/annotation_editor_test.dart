@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
 import 'package:storm_teleprompter_plus/models/reading_annotation.dart';
 import 'package:storm_teleprompter_plus/pages/editor_page.dart';
+import 'package:storm_teleprompter_plus/widgets/editor/reading_annotation_preview.dart';
 
 import 'support/quick_workspace_test_host.dart';
 
@@ -22,11 +23,16 @@ void main() {
     unawaited(editor.addAnnotation());
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('annotation-text-input')), '重读');
+    await tester.pump();
+    final preview = tester.widget<ReadingAnnotationPreview>(find.byKey(const ValueKey('live-annotation-preview')));
+    expect(preview.annotations.single.text, '重读');
+    expect(preview.annotations.single.ranges.single.quote, '不');
     await tester.tap(find.text('保存批注'));
     await tester.pumpAndSettle();
     expect(editor.annotations.single.ranges.single.quote, '不');
     expect(editor.annotations.single.ranges.single.start, 2);
     expect(editor.contentController.text, isNot(contains('重读')));
+    expect(find.byType(ReadingAnnotationPreview), findsOneWidget);
     await editor.save(force: true);
     expect(articles.articles.single.annotations.single.text, '重读');
     expect(articles.articles.single.content, editor.contentController.text);
@@ -85,4 +91,27 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+  testWidgets('numeric HTML entities round-trip without changing annotated original text', (tester) async {
+    final articles = QuickTestArticles();
+    final settings = QuickTestSettings();
+    final article = Article(id: 'entities', title: '实体', content: '<p>甲&#x1F600;乙</p>',
+      createdAt: DateTime(2026), updatedAt: DateTime(2026), annotations: const [
+        ReadingAnnotation(id: 'emoji', text: '语气轻快',
+          ranges: [AnnotationRange(start: 1, end: 3, quote: '😀')]),
+      ]);
+    articles.upsertArticle(article);
+    await mountQuickWorkspace(tester,
+      EditorPage(article: article, quickMode: true, autoSave: false), articles, settings);
+    final editor = tester.state<EditorPageState>(find.byType(EditorPage));
+    expect(editor.quillController.document.toPlainText(), '甲😀乙\n');
+    editor.quillController.updateSelection(const TextSelection(baseOffset: 1, extentOffset: 3), quill.ChangeSource.local);
+    await tester.pump();
+    await editor.save(force: true);
+    expect(articles.articles.single.annotations.single.isAnchored, isTrue);
+    expect(articles.articles.single.annotations.single.ranges.single.quote, '😀');
+    expect(articles.articles.single.content, isNot(contains('&amp;#')));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
 }
