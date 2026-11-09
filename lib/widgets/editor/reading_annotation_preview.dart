@@ -269,17 +269,16 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       // The document's first line can borrow the playback viewport's existing
       // top padding. Preview it using this viewport's own reading-line padding.
       final ratio = _settings.readingLineOffset > 0
-          ? _settings.readingLineOffset.clamp(0.0, 1.0)
+          ? _settings.readingLineOffset.clamp(0.0, 1.0).toDouble()
           : width < LayoutConstants.compactBreakpoint
           ? TeleprompterConstants.readingLineRatioMobile
           : TeleprompterConstants.readingLineRatioDesktop;
       var padding = widget.height * TeleprompterConstants.topPaddingVh / 100;
       if (!_settings.isContinuousScroll) {
         final inset = math.min(widget.height / 2, geometry.emptyHeight / 2 + 4);
-        final readingLine = (widget.height * ratio).clamp(
-          inset,
-          math.max(inset, widget.height - inset),
-        );
+        final readingLine = (widget.height * ratio)
+            .clamp(inset, math.max(inset, widget.height - inset))
+            .toDouble();
         padding = math.max(padding, readingLine);
       }
       return math.min(cap, padding + 2);
