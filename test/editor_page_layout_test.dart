@@ -5,6 +5,7 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
+import 'package:storm_teleprompter_plus/models/reading_annotation.dart';
 import 'package:storm_teleprompter_plus/pages/editor_page.dart';
 import 'package:storm_teleprompter_plus/providers/article_provider.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
@@ -15,8 +16,13 @@ class _DelayedArticleProvider extends ArticleProvider {
   final completer = Completer<Article?>();
 
   @override
-  Future<Article?> updateArticle(String id, {String? title, String? content}) =>
-      completer.future;
+  Future<Article?> updateArticle(
+    String id, {
+    List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
+    String? title,
+    String? content,
+  }) => completer.future;
 }
 
 void main() {
@@ -202,13 +208,17 @@ void main() {
 
     await pumpEditor('<p> \u200B\uFEFF </p>');
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词'))
+          .onPressed,
       isNull,
     );
 
     await pumpEditor('<p>可见正文</p>');
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词'))
+          .onPressed,
       isNotNull,
     );
   });

@@ -25,14 +25,21 @@ class TextParser {
   /// - 删除线: `<s>`, `<strike>`, `<del>`
   /// - 字体大小: `style="font-size: XXpx"`
   /// - 背景色: `style="background-color: #XXXXXX"` 或 `style="background: #XXXXXX"`
-  /// - 段落: `<p>`, `<div>`, `<h1>`~`<h6>` 作为分行依据
+  /// - 段落: `<p>`, `<div>`, `<h1>`~`<h6>` 等块标签
+  /// - 段内人工分行: `<br>`；同段的多行共享阅读颜色
+  /// - 标点和界面自动折行都不切分人工段落
   static List<ScriptLine> parse(String htmlContent) {
     if (htmlContent.trim().isEmpty) return [];
 
     final lines = <ScriptLine>[];
+    final paragraphIndices = <int>[];
     final buffer = StringBuffer();
-    int lineIndex = 0;
     int rawIndex = 0;
+    int paragraphIndex = 0;
+    final blocks = <(String, int)>[];
+    bool pendingParagraphBreak = false;
+    bool preserveEmptyParagraph = false;
+    bool previousWasLineBreak = false;
 
     // 格式栈
     bool bold = false;
@@ -43,6 +50,47 @@ class TextParser {
     int? backgroundColor;
     int? textColor;
 
+    void beginLine({bool newParagraph = false, bool force = false}) {
+      if (newParagraph && lines.isNotEmpty) paragraphIndex++;
+      if (lines.isEmpty || lines.last.characters.isNotEmpty || force) {
+        lines.add(ScriptLine(characters: [], lineIndex: lines.length));
+        paragraphIndices.add(paragraphIndex);
+      } else {
+        // The empty line after a trailing <br> can become the next paragraph.
+        paragraphIndices[paragraphIndices.length - 1] = paragraphIndex;
+      }
+    }
+
+    void flushBuffer() {
+      if (buffer.isEmpty) return;
+      if (pendingParagraphBreak) {
+        beginLine(newParagraph: true, force: preserveEmptyParagraph);
+        pendingParagraphBreak = false;
+        preserveEmptyParagraph = false;
+      } else if (lines.isEmpty) {
+        beginLine();
+      }
+      // Decode only text nodes, once. Escaped '<' must never become a tag;
+      // annotation and speech offsets count displayed UTF-16 units.
+      final decoded = StringBuffer(decodeHtmlEntities(buffer.toString()));
+      _flushBuffer(
+        decoded,
+        lines,
+        lines.last.lineIndex,
+        rawIndex,
+        bold,
+        italic,
+        underline,
+        strikeThrough,
+        fontSizePx,
+        backgroundColor,
+        textColor,
+      );
+      rawIndex += decoded.length;
+      buffer.clear();
+      previousWasLineBreak = false;
+    }
+
     // 简化的 HTML 解析状态机
     int i = 0;
     while (i < htmlContent.length) {
@@ -50,30 +98,13 @@ class TextParser {
 
       if (char == '<') {
         // 将缓冲区中的文字添加到当前行
-        if (buffer.isNotEmpty) {
-          _flushBuffer(
-            buffer,
-            lines,
-            lineIndex,
-            rawIndex,
-            bold,
-            italic,
-            underline,
-            strikeThrough,
-            fontSizePx,
-            backgroundColor,
-            textColor,
-          );
-          rawIndex += buffer.length;
-          buffer.clear();
-        }
+        flushBuffer();
 
         // 找到标签结束
         final tagEnd = htmlContent.indexOf('>', i);
         if (tagEnd == -1) {
           // 不完整的标签，当作普通文字
           buffer.write(char);
-          rawIndex++;
           i++;
           continue;
         }
@@ -81,36 +112,55 @@ class TextParser {
         final tag = htmlContent.substring(i, tagEnd + 1);
         i = tagEnd + 1;
 
-        // 判断是否为自闭合标签
-        if (tag.endsWith('/>') || tag == '<br/>' || tag == '<br>') {
-          // 换行
-          if (lines.isEmpty || lines.last.characters.isNotEmpty) {
-            lines.add(ScriptLine(characters: [], lineIndex: lineIndex));
-            lineIndex++;
-          }
-          continue;
-        }
-
         // 处理标签
         final isClosing = tag.startsWith('</');
-        final tagContent = isClosing
+        final isSelfClosing = tag.endsWith('/>');
+        final rawTagContent = isClosing
             ? tag.substring(2, tag.length - 1).trim().toLowerCase()
             : tag.substring(1, tag.length - 1).trim().toLowerCase();
+        final tagContent = rawTagContent.replaceFirst(RegExp(r'/$'), '').trim();
 
         // 提取标签名（忽略属性）
         final tagName = tagContent.split(RegExp(r'\s+')).first;
 
+        if (tagName == 'br' && !isClosing) {
+          if (pendingParagraphBreak) {
+            beginLine(newParagraph: true, force: preserveEmptyParagraph);
+            pendingParagraphBreak = false;
+            preserveEmptyParagraph = false;
+          } else {
+            beginLine(force: previousWasLineBreak);
+          }
+          previousWasLineBreak = true;
+          continue;
+        }
+
         // 块级元素处理
         if (_isBlockElement(tagName)) {
           if (!isClosing) {
-            // 开始新行
-            if (lines.isEmpty || lines.last.characters.isNotEmpty) {
-              lines.add(ScriptLine(characters: [], lineIndex: lineIndex));
-              lineIndex++;
+            beginLine(newParagraph: true, force: preserveEmptyParagraph);
+            pendingParagraphBreak = false;
+            preserveEmptyParagraph = false;
+            previousWasLineBreak = false;
+            if (!isSelfClosing) {
+              blocks.add((tagName, rawIndex));
+            } else {
+              pendingParagraphBreak = true;
+              preserveEmptyParagraph = true;
             }
+          } else {
+            final open = blocks.lastIndexWhere((block) => block.$1 == tagName);
+            if (open >= 0) {
+              preserveEmptyParagraph =
+                  preserveEmptyParagraph || blocks[open].$2 == rawIndex;
+              blocks.removeRange(open, blocks.length);
+            }
+            pendingParagraphBreak = true;
           }
           continue;
         }
+
+        if (isSelfClosing) continue;
 
         // 行内格式标签
         if (isClosing) {
@@ -167,27 +217,14 @@ class TextParser {
 
       // 普通字符
       if (char == '\n') {
-        if (buffer.isNotEmpty) {
-          _flushBuffer(
-            buffer,
-            lines,
-            lineIndex,
-            rawIndex,
-            bold,
-            italic,
-            underline,
-            strikeThrough,
-            fontSizePx,
-            backgroundColor,
-            textColor,
-          );
-          rawIndex += buffer.length;
-          buffer.clear();
-        }
-        if (lines.isEmpty || lines.last.characters.isNotEmpty) {
-          lines.add(ScriptLine(characters: [], lineIndex: lineIndex));
-          lineIndex++;
-        }
+        flushBuffer();
+        beginLine(
+          newParagraph: pendingParagraphBreak || blocks.isEmpty,
+          force: preserveEmptyParagraph || previousWasLineBreak,
+        );
+        pendingParagraphBreak = false;
+        preserveEmptyParagraph = false;
+        previousWasLineBreak = true;
       } else {
         buffer.write(char);
       }
@@ -195,28 +232,63 @@ class TextParser {
     }
 
     // 处理剩余缓冲区
-    if (buffer.isNotEmpty) {
-      _flushBuffer(
-        buffer,
-        lines,
-        lineIndex,
-        rawIndex,
-        bold,
-        italic,
-        underline,
-        strikeThrough,
-        fontSizePx,
-        backgroundColor,
-        textColor,
-      );
-    }
+    flushBuffer();
 
     // 确保至少有一行
     if (lines.isEmpty) {
-      lines.add(const ScriptLine(characters: [], lineIndex: 0));
+      beginLine();
     }
 
-    return lines;
+    return _withParagraphs(lines, paragraphIndices);
+  }
+
+  /// Attach shared ranges after parsing. Characters and their raw indices are
+  /// not inserted, removed or renumbered. Newline gaps in plain text belong to
+  /// the previous paragraph until the next non-empty paragraph is entered.
+  static List<ScriptLine> _withParagraphs(
+    List<ScriptLine> lines,
+    List<int> paragraphIndices,
+  ) {
+    final starts = <int, int>{};
+    final ends = <int, int>{};
+    for (var i = 0; i < lines.length; i++) {
+      final chars = lines[i].characters;
+      // Keep whitespace characters and their raw offsets, including the CR
+      // in a plain-text CRLF, but do not activate an invisible blank paragraph.
+      if (chars.isEmpty || visibleCharacterCount(lines[i].text) == 0) continue;
+      final paragraphIndex = paragraphIndices[i];
+      starts.putIfAbsent(paragraphIndex, () => chars.first.rawIndex);
+      ends[paragraphIndex] = chars.last.rawIndex + chars.last.char.length - 1;
+    }
+
+    final paragraphs = <int, ScriptParagraph>{};
+    int? nextStart;
+    for (final index in paragraphIndices.toSet().toList().reversed) {
+      final start = starts[index];
+      if (start == null) {
+        paragraphs[index] = ScriptParagraph(
+          index: index,
+          rawStart: nextStart ?? 0,
+          rawEnd: (nextStart ?? 0) - 1,
+        );
+      } else {
+        paragraphs[index] = ScriptParagraph(
+          index: index,
+          rawStart: start,
+          rawEnd: nextStart == null ? ends[index]! : nextStart - 1,
+        );
+        nextStart = start;
+      }
+    }
+
+    return [
+      for (var i = 0; i < lines.length; i++)
+        ScriptLine(
+          characters: lines[i].characters,
+          lineIndex: lines[i].lineIndex,
+          paragraph: paragraphs[paragraphIndices[i]],
+        ),
+    ];
   }
 
   /// 将缓冲区内容作为字符追加到当前行
@@ -351,13 +423,30 @@ class TextParser {
   }
 
   static String decodeHtmlEntities(String text) {
-    return text
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&amp;', '&');
+    const named = {
+      'nbsp': ' ',
+      'lt': '<',
+      'gt': '>',
+      'quot': '"',
+      'apos': "'",
+      'amp': '&',
+    };
+    return text.replaceAllMapped(
+      RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|nbsp|lt|gt|quot|apos|amp);'),
+      (match) {
+        final value = match.group(1)!;
+        if (!value.startsWith('#')) return named[value]!;
+        final codePoint = value.startsWith('#x')
+            ? int.tryParse(value.substring(2), radix: 16)
+            : int.tryParse(value.substring(1));
+        if (codePoint == null ||
+            codePoint <= 0 ||
+            codePoint > 0x10ffff ||
+            (codePoint >= 0xd800 && codePoint <= 0xdfff))
+          return match.group(0)!;
+        return String.fromCharCode(codePoint);
+      },
+    );
   }
 
   static String encodeHtmlEntities(String text) {
@@ -406,7 +495,8 @@ class TextParser {
         RegExp(r'[A-Za-z0-9]').hasMatch(text[index + 1]);
   }
 
-  /// 将纯文本解析为字符行列表（不含格式）
+  /// 将纯文本解析为字符行列表（不含格式）。每个人工换行切分一段；
+  /// 空行保留为排版间隔，句号、问号等标点不切段。
   static List<ScriptLine> parsePlainText(String text) {
     if (text.trim().isEmpty) return [];
 
@@ -435,7 +525,10 @@ class TextParser {
       lines.add(ScriptLine(characters: characters, lineIndex: lineIdx));
     }
 
-    return lines;
+    return _withParagraphs(
+      lines,
+      List.generate(lines.length, (index) => index),
+    );
   }
 
   /// 判断内容是否为 HTML

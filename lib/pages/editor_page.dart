@@ -13,6 +13,9 @@ import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart
 import 'package:provider/provider.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/app_settings.dart';
+import '../models/reading_annotation.dart';
+import '../services/annotation_anchors.dart';
 import '../providers/article_provider.dart';
 import '../widgets/common/folder_picker_dialog.dart';
 import '../providers/connection_provider.dart';
@@ -27,12 +30,15 @@ import '../widgets/common/settled_dialog.dart';
 import '../widgets/editor/quick_mode_action_button.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/editor/editor_toolbar.dart';
+import '../widgets/editor/reading_annotation_preview.dart';
+import '../widgets/settings/reading_annotation_appearance_dialog.dart';
 import '../widgets/editor/editor_toolbar_style.dart';
 import 'teleprompter_page.dart';
 
 part 'editor/editor_logic.dart';
 part 'editor/editor_quick_mode.dart';
 part 'editor/editor_chrome.dart';
+part 'editor/editor_annotations.dart';
 
 /// 富文本稿件编辑器，快速模式允许仅在内存中保留草稿。
 class EditorPage extends StatefulWidget {
@@ -62,11 +68,14 @@ class EditorPage extends StatefulWidget {
 
 /// 暴露离开确认供稿件管理和系统退出入口复用。
 class EditorPageState extends State<EditorPage>
-    with EditorLogic, EditorQuickMode, EditorChrome {
+    with EditorLogic, EditorQuickMode, EditorChrome, EditorAnnotations {
   @override
   Widget build(BuildContext context) {
+    // Defaults can change while a manuscript stays open. The editor keeps its
+    // own manuscript snapshot rather than borrowing another playback session.
+    context.watch<SettingsProvider>();
     return PopScope(
-      canPop: !widget.quickMode || !widget.isActive,
+      canPop: canLeaveRoute,
       onPopInvokedWithResult: (didPop, _) {
         if (!widget.isActive) return;
         if (didPop) {
@@ -109,6 +118,12 @@ class EditorPageState extends State<EditorPage>
               alt: true,
             ): () =>
                 unawaited(quickStartTeleprompter()),
+            const SingleActivator(
+              LogicalKeyboardKey.keyM,
+              control: true,
+              alt: true,
+            ): () =>
+                unawaited(addAnnotation()),
             const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
                 showFindReplaceDialog(replaceMode: false),
             const SingleActivator(LogicalKeyboardKey.keyH, control: true): () =>
@@ -173,6 +188,45 @@ class EditorPageState extends State<EditorPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Tooltip(
+          message: '给所选字词添加批注',
+          child: SizedBox(
+            height: EditorToolbarStyle.buttonSize,
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('add-reading-annotation'),
+              onPressed: addAnnotation,
+              icon: const Icon(Icons.add_comment_outlined, size: 18),
+              label: const Text('添加批注'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: EditorToolbarStyle.spacing),
+        _buildFormatButton(
+          Icons.palette_outlined,
+          '批注外观：字体、字号和颜色',
+          () => unawaited(editAnnotationAppearance()),
+        ),
+        _buildFormatButton(
+          Icons.comment_outlined,
+          '批注管理（${annotations.length}）',
+          manageAnnotations,
+          selected: annotations.isNotEmpty,
+        ),
+        if (annotations.isNotEmpty)
+          _buildFormatButton(
+            Icons.preview_outlined,
+            '显示或收起批注预览',
+            toggleAnnotationPreview,
+            selected: showAnnotationPreview,
+          ),
         _buildFormatButton(Icons.vertical_align_top, '删除空行', removeEmptyLines),
         _buildFormatButton(
           Icons.format_indent_decrease,
@@ -248,26 +302,29 @@ class EditorPageState extends State<EditorPage>
           ),
           Divider(height: 1, color: AppColors.borderLightFor(context)),
           Expanded(
-            child: quill.QuillEditor.basic(
-              controller: quillController,
-              focusNode: editorFocusNode,
-              config: quill.QuillEditorConfig(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                placeholder: '请输入稿件正文',
-                expands: true,
-                autoFocus: true,
-                customStyles: quill.DefaultStyles(
-                  paragraph: paragraphStyle,
-                  placeHolder: quill.DefaultTextBlockStyle(
-                    editorTextStyle.copyWith(
-                      color: editorTextColor.withValues(alpha: 0.46),
+            child: buildAnnotationWorkspace(
+              quill.QuillEditor.basic(
+                key: quillEditorKey,
+                controller: quillController,
+                focusNode: editorFocusNode,
+                config: quill.QuillEditorConfig(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                  placeholder: '请输入稿件正文',
+                  expands: true,
+                  autoFocus: true,
+                  customStyles: quill.DefaultStyles(
+                    paragraph: paragraphStyle,
+                    placeHolder: quill.DefaultTextBlockStyle(
+                      editorTextStyle.copyWith(
+                        color: editorTextColor.withValues(alpha: 0.46),
+                      ),
+                      quill.HorizontalSpacing.zero,
+                      quill.VerticalSpacing.zero,
+                      quill.VerticalSpacing.zero,
+                      null,
                     ),
-                    quill.HorizontalSpacing.zero,
-                    quill.VerticalSpacing.zero,
-                    quill.VerticalSpacing.zero,
-                    null,
+                    color: editorTextColor,
                   ),
-                  color: editorTextColor,
                 ),
               ),
             ),

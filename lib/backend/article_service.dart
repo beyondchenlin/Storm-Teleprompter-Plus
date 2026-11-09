@@ -1,5 +1,7 @@
 import 'dart:convert';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
+import '../services/annotation_anchors.dart';
 import '../models/folder.dart';
 import '../services/app_preferences.dart';
 import '../utils/constants.dart';
@@ -130,78 +132,107 @@ class ArticleService {
   }
 
   Future<void> _handleArticleCreate(WsServer server, WsRequest request) async {
-    final data = request.message.data;
-    final title = data['title'] as String? ?? '';
-    final content = data['content'] as String? ?? '';
-    final folderId = data['folderId'] as String?;
+    try {
+      final data = request.message.data;
+      final title = data['title'] as String? ?? '';
+      final content = data['content'] as String? ?? '';
+      final folderId = data['folderId'] as String?;
 
-    final article = await createArticle(
-      title: title,
-      content: content,
-      folderId: folderId,
-    );
-    server.respond(
-      request.clientId,
-      WsMessage(
-        type: WsMessageType.articleCreateResponse,
-        id: request.message.id,
-        data: {'article': article.toJson()},
-      ),
-    );
-    // 广播变更给其他客户端
-    server.broadcast(
-      WsMessage(
-        type: WsMessageType.articleCreateResponse,
-        data: {'article': article.toJson(), 'broadcast': true},
-      ),
-    );
-  }
-
-  Future<void> _handleArticleUpdate(WsServer server, WsRequest request) async {
-    final data = request.message.data;
-    final id = data['id'] as String?;
-    if (id == null) {
+      final article = await createArticle(
+        title: title,
+        content: content,
+        annotations: ReadingAnnotation.listFromJson(data['annotations']),
+        teleprompterSettings: data['teleprompterSettings'] == null
+            ? null
+            : Map<String, dynamic>.from(data['teleprompterSettings'] as Map),
+        folderId: folderId,
+      );
+      server.respond(
+        request.clientId,
+        WsMessage(
+          type: WsMessageType.articleCreateResponse,
+          id: request.message.id,
+          data: {'article': article.toJson()},
+        ),
+      );
+      // 广播变更给其他客户端
+      server.broadcast(
+        WsMessage(
+          type: WsMessageType.articleCreateResponse,
+          data: {'article': article.toJson(), 'broadcast': true},
+        ),
+      );
+    } catch (error) {
       server.respond(
         request.clientId,
         WsMessage(
           type: WsMessageType.error,
           id: request.message.id,
-          data: {'message': '缺少稿件 ID'},
+          data: {'message': '创建稿件失败: $error'},
         ),
       );
-      return;
     }
+  }
 
-    final updated = await updateArticle(
-      id,
-      title: data['title'] as String?,
-      content: data['content'] as String?,
-      teleprompterSettings: data['teleprompterSettings'] == null
-          ? null
-          : Map<String, dynamic>.from(data['teleprompterSettings'] as Map),
-    );
+  Future<void> _handleArticleUpdate(WsServer server, WsRequest request) async {
+    try {
+      final data = request.message.data;
+      final id = data['id'] as String?;
+      if (id == null) {
+        server.respond(
+          request.clientId,
+          WsMessage(
+            type: WsMessageType.error,
+            id: request.message.id,
+            data: {'message': '缺少稿件 ID'},
+          ),
+        );
+        return;
+      }
 
-    server.respond(
-      request.clientId,
-      WsMessage(
-        type: WsMessageType.articleUpdateResponse,
-        id: request.message.id,
-        data: {
-          if (updated != null) 'article': updated.toJson(),
-          'success': updated != null,
-        },
-      ),
-    );
-    // 广播变更
-    if (updated != null) {
-      server.broadcast(
+      final updated = await updateArticle(
+        id,
+        title: data['title'] as String?,
+        content: data['content'] as String?,
+        annotations: data.containsKey('annotations')
+            ? ReadingAnnotation.listFromJson(data['annotations'])
+            : null,
+        teleprompterSettings: data['teleprompterSettings'] == null
+            ? null
+            : Map<String, dynamic>.from(data['teleprompterSettings'] as Map),
+      );
+
+      server.respond(
+        request.clientId,
         WsMessage(
           type: WsMessageType.articleUpdateResponse,
+          id: request.message.id,
           data: {
-            'article': updated.toJson(),
-            'success': true,
-            'broadcast': true,
+            if (updated != null) 'article': updated.toJson(),
+            'success': updated != null,
           },
+        ),
+      );
+      // 广播变更
+      if (updated != null) {
+        server.broadcast(
+          WsMessage(
+            type: WsMessageType.articleUpdateResponse,
+            data: {
+              'article': updated.toJson(),
+              'success': true,
+              'broadcast': true,
+            },
+          ),
+        );
+      }
+    } catch (error) {
+      server.respond(
+        request.clientId,
+        WsMessage(
+          type: WsMessageType.error,
+          id: request.message.id,
+          data: {'message': '更新稿件失败: $error'},
         ),
       );
     }
@@ -299,6 +330,8 @@ class ArticleService {
       final created = await createArticle(
         title: article.title,
         content: article.content,
+        annotations: article.annotations,
+        teleprompterSettings: article.teleprompterSettings,
       );
       server.respond(
         request.clientId,
@@ -550,6 +583,18 @@ class ArticleService {
     return operation;
   }
 
+  /// Keeps whole-backup commits ordered with article and folder mutations.
+  /// The callback must access the store directly, not re-enter this queue.
+  Future<T> runStorageTransaction<T>(
+    Future<T> Function(AppPreferences preferences) transaction,
+  ) => _mutate(() => transaction(_prefs));
+
+  /// A backup must not combine folders from one mutation with manuscripts
+  /// from another. Keep their snapshots stable until its settings read ends.
+  Future<T> readBackupSnapshot<T>(
+    Future<T> Function(List<Article> articles, List<Folder> folders) read,
+  ) => _mutate(() => read(_readArticles(), _readFolders()));
+
   /// 获取所有稿件列表
   Future<List<Article>> loadArticles() async {
     await _pendingMutation;
@@ -588,14 +633,24 @@ class ArticleService {
   Future<Article> createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     String? folderId,
   }) => _mutate(
-    () => _createArticle(title: title, content: content, folderId: folderId),
+    () => _createArticle(
+      title: title,
+      content: content,
+      annotations: annotations,
+      teleprompterSettings: teleprompterSettings,
+      folderId: folderId,
+    ),
   );
 
   Future<Article> _createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     String? folderId,
   }) async {
     final now = DateTime.now();
@@ -604,6 +659,10 @@ class ArticleService {
       title: title,
       content: content,
       createdAt: now,
+      annotations: AnnotationAnchors.validate(content, annotations),
+      teleprompterSettings: teleprompterSettings == null
+          ? null
+          : Map<String, dynamic>.from(teleprompterSettings),
       updatedAt: now,
       folderId: folderId,
     );
@@ -619,12 +678,14 @@ class ArticleService {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
     Map<String, dynamic>? teleprompterSettings,
   }) => _mutate(
     () => _updateArticle(
       id,
       title: title,
       content: content,
+      annotations: annotations,
       teleprompterSettings: teleprompterSettings,
     ),
   );
@@ -633,15 +694,28 @@ class ArticleService {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
     Map<String, dynamic>? teleprompterSettings,
   }) async {
     final articles = _readArticles();
     final index = articles.indexWhere((a) => a.id == id);
     if (index == -1) return null;
 
-    final updated = articles[index].copyWith(
+    final previous = articles[index];
+    final nextContent = content ?? previous.content;
+    final nextAnnotations = annotations != null
+        ? AnnotationAnchors.validate(nextContent, annotations)
+        : content == null
+        ? previous.annotations
+        : AnnotationAnchors.remap(
+            previous.content,
+            nextContent,
+            previous.annotations,
+          );
+    final updated = previous.copyWith(
       title: title,
       content: content,
+      annotations: nextAnnotations,
       teleprompterSettings: teleprompterSettings,
       updatedAt: DateTime.now(),
     );
@@ -828,6 +902,7 @@ class ArticleService {
             id: _generateId(),
             title: article.title,
             content: article.content,
+            annotations: article.annotations,
             createdAt: now,
             updatedAt: now,
             sortOrder: article.sortOrder,

@@ -1,8 +1,17 @@
+import '../../models/reading_annotation.dart';
+
 class ImportedArticleDraft {
-  const ImportedArticleDraft({required this.title, required this.content});
+  const ImportedArticleDraft({
+    required this.title,
+    required this.content,
+    this.annotations = const [],
+    this.warnings = const [],
+  });
 
   final String title;
   final String content;
+  final List<ReadingAnnotation> annotations;
+  final List<String> warnings;
 }
 
 class ImportedFolderDraft {

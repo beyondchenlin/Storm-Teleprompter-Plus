@@ -27,12 +27,34 @@ class ScriptCharacter {
   });
 }
 
-/// 文本行，包含一组字符
+/// 人工段落在语音对齐原文中的范围；自动折行不改变这个范围。
+/// 同段落的多个人工行共享同一个实例。末尾空白归属前段，进入下一段的
+/// 首字符时前段才整体变为已读。原始索引均保留解析器的 UTF-16 约定。
+class ScriptParagraph {
+  final int index;
+  final int rawStart;
+  final int rawEnd;
+
+  const ScriptParagraph({
+    required this.index,
+    required this.rawStart,
+    required this.rawEnd,
+  });
+
+  bool containsRawIndex(int index) => index >= rawStart && index <= rawEnd;
+}
+
+/// 人工文本行，包含一组字符；段内软换行可以产生多行。
 class ScriptLine {
   final List<ScriptCharacter> characters;
   final int lineIndex;
+  final ScriptParagraph? paragraph;
 
-  const ScriptLine({required this.characters, required this.lineIndex});
+  const ScriptLine({
+    required this.characters,
+    required this.lineIndex,
+    this.paragraph,
+  });
 
   /// 获取行纯文本
   String get text => characters.map((c) => c.char).join();

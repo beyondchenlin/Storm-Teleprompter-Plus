@@ -31,6 +31,7 @@ try {
   )
   & flutter @arguments
   if ($LASTEXITCODE -ne 0) { throw 'Flutter Windows release build failed.' }
+  $pdfRuntime = Assert-BKPdfiumRuntime -ProjectRoot $projectRoot -BuildDirectory $buildDirectory
   $runtime = Copy-BKVisualCRuntime -BuildDirectory $buildDirectory
   Assert-BKExecutableBranding -Path (Join-Path $buildDirectory 'BK 提词器.exe') -Release $release
   $files = @(Get-BKFileManifest -Directory $buildDirectory -RuntimeOnly)
@@ -48,6 +49,7 @@ try {
     completedUtc = [DateTime]::UtcNow.ToString('o')
     flutter = $flutterVersion
     visualCRuntime = $runtime
+    pdfRuntime = $pdfRuntime
     files = $files
   }
   Write-BKJson -Path $receiptPath -Value $receipt

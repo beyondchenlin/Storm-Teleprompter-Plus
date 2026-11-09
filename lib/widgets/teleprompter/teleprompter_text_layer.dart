@@ -2,15 +2,38 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import '../../models/app_settings.dart';
+import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
 import 'continuous_scroll_driver.dart';
 import 'measured_line_delegate.dart';
 import 'reading_emphasis_text.dart';
+import 'reading_annotation_layer.dart';
 import 'reading_area_frame.dart';
+
+/// A line identity is local to its viewport, even when two previews share the
+/// same parsed source. New key objects can resolve a mounted line without an
+/// unbounded registry of keys for every line in a long manuscript.
+class _ReadingLineKey extends GlobalObjectKey<ReadingEmphasisLineState> {
+  final Object viewport;
+
+  const _ReadingLineKey(super.value, this.viewport);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ReadingLineKey &&
+      identical(value, other.value) &&
+      identical(viewport, other.viewport);
+
+  @override
+  int get hashCode =>
+      Object.hash(identityHashCode(value), identityHashCode(viewport));
+}
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
 ///
@@ -53,6 +76,9 @@ class TeleprompterTextLayer extends StatefulWidget {
   final int currentCharColor;
   final int readCharColor;
   final double currentCharScale;
+  final List<ReadingAnnotation> annotations;
+  final bool showAnnotations;
+  final ReadingAnnotationStyle annotationStyle;
 
   const TeleprompterTextLayer({
     super.key,
@@ -89,6 +115,9 @@ class TeleprompterTextLayer extends StatefulWidget {
     this.currentCharColor = AppSettings.defaultCurrentCharColor,
     this.readCharColor = AppSettings.defaultReadCharColor,
     this.currentCharScale = AppSettings.defaultCurrentCharScale,
+    this.annotations = const [],
+    this.showAnnotations = true,
+    this.annotationStyle = const ReadingAnnotationStyle(),
   });
 
   @override
@@ -103,6 +132,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   @override
   void initState() {
     super.initState();
+    _glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
     _continuousDriver = ContinuousScrollDriver(
       vsync: this,
       controller: widget.scrollController,
@@ -140,6 +170,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   void dispose() {
     _continuousDriver.dispose();
     _navigationLayout?.dispose();
+    _glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
     _glyphCache.dispose();
     super.dispose();
   }
@@ -158,8 +189,26 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   final List<double> _lineTops = <double>[];
   double _contentHeight = 0;
   final ReadingGlyphPainterCache _glyphCache = ReadingGlyphPainterCache();
+  List<ScriptLine>? _indexedAnnotationLines;
+  List<ReadingAnnotation>? _indexedAnnotations;
+  List<List<ReadingAnnotation>> _lineAnnotations = const [];
+  final Map<int, double> _annotationLeadingSpaces = {};
+  bool _annotationTapHandled = false;
+  ({
+    ReadingEmphasisLineState state,
+    Offset position,
+    Duration time,
+    int pointer,
+  })?
+  _annotationTapCandidate;
+  bool _annotationPointerMoved = false;
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
+  List<ScriptLine>? _intrinsicWidthLines;
+  ReadingTextGeometry? _intrinsicWidthGeometry;
+  TextDirection? _intrinsicWidthDirection;
+  double _contentIntrinsicWidth = 0;
+  int _intrinsicWidthBuildCount = 0;
   double _fontScale = 1;
   double? _lastFitScale;
   double _maximumRowHeight = 0;
@@ -176,6 +225,18 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   @visibleForTesting
   int get debugMetricsBuildCount => _metricsBuildCount;
+
+  @visibleForTesting
+  int get debugIntrinsicWidthBuildCount => _intrinsicWidthBuildCount;
+
+  void _handleAnnotationInkChanged() {
+    if (!mounted) return;
+    // Neighbouring authored lines share existing trailing whitespace. Refresh
+    // only this annotation borrowing cache: metrics, widths and scroll anchors
+    // remain valid and must never be dirtied by asynchronous ink measurements.
+    _annotationLeadingSpaces.clear();
+    if (widget.annotations.isNotEmpty) setState(() {});
+  }
 
   ReadingTextGeometry get _textGeometry => ReadingTextGeometry(
     fontSize: widget.fontSize,
@@ -268,7 +329,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     }
   }
 
-  double _horizontalPadding(double viewportWidth) {
+  double _minimumHorizontalPadding(double viewportWidth) {
     final isMobile = viewportWidth < LayoutConstants.compactBreakpoint;
     final basePadding = isMobile
         ? TeleprompterConstants.mobileHorizontalPadding
@@ -284,11 +345,58 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         .toDouble();
   }
 
-  double _textWidthForViewport(double viewportWidth) {
-    final horizontalPadding = _horizontalPadding(viewportWidth);
+  double _maximumTextWidthForViewport(double viewportWidth) {
+    final horizontalPadding = _minimumHorizontalPadding(viewportWidth);
     return (viewportWidth - horizontalPadding * 2)
         .clamp(0.0, viewportWidth)
         .toDouble();
+  }
+
+  double _textWidthForViewport(double viewportWidth) {
+    final maximum = _maximumTextWidthForViewport(viewportWidth);
+    if (_contentIntrinsicWidth <= 0) return maximum;
+    // A small rounding allowance prevents a native paragraph from wrapping
+    // its last glyph at its own fractional intrinsic width. The side guide
+    // supplies the remaining breathing room outside the text column.
+    return math.min(maximum, _contentIntrinsicWidth.ceilToDouble() + 2);
+  }
+
+  double _horizontalPadding(double viewportWidth) =>
+      math.max(0.0, (viewportWidth - _textWidthForViewport(viewportWidth)) / 2);
+
+  /// Share one content-derived column across the entire manuscript. A manual
+  /// line is measured without wrapping, not joined with the other manual
+  /// lines in its paragraph. Current glyph, reading colour and microphone
+  /// events never invalidate this cache; ordinary window-width changes only
+  /// clamp its result and do not remeasure the unwrapped manuscript.
+  void _ensureIntrinsicWidth(TextDirection textDirection) {
+    final geometry = _textGeometry;
+    if (identical(_intrinsicWidthLines, widget.lines) &&
+        _intrinsicWidthGeometry == geometry &&
+        _intrinsicWidthDirection == textDirection) {
+      return;
+    }
+
+    var widest = 0.0;
+    for (final line in widget.lines) {
+      if (line.characters.isEmpty || line.text.trim().isEmpty) continue;
+      final layout = ReadingTextLayout(
+        line: line,
+        geometry: geometry,
+        width: double.infinity,
+        direction: textDirection,
+      );
+      // Reuse precisely the mixed-style, italic-safe and maximum-emphasis
+      // cells that are used for painting and hit testing, not character count
+      // times nominal font size. Each temporary native layout is released.
+      widest = math.max(widest, layout.maxIntrinsicWidth);
+      layout.dispose();
+    }
+    _contentIntrinsicWidth = widest;
+    _intrinsicWidthLines = widget.lines;
+    _intrinsicWidthGeometry = geometry;
+    _intrinsicWidthDirection = textDirection;
+    _intrinsicWidthBuildCount++;
   }
 
   double _effectiveReadingLineRatio(double viewportWidth) {
@@ -531,6 +639,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     _metricsBuildCount++;
     _lineHeights.clear();
     _lineTops.clear();
+    _annotationLeadingSpaces.clear();
     _maximumRowHeight = 0;
 
     var cursor = 0.0;
@@ -844,6 +953,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   @override
   Widget build(BuildContext context) {
+    _ensureAnnotationIndex();
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -855,8 +965,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         final viewportHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : screenHeight;
-        final horizontalPadding = _horizontalPadding(viewportWidth);
-        final textWidth = _textWidthForViewport(viewportWidth);
+        final maximumTextWidth = _maximumTextWidthForViewport(viewportWidth);
+        final textDirection = Directionality.of(context);
         final size = Size(viewportWidth, viewportHeight);
         final viewportChanged =
             size != _lastViewportSize ||
@@ -864,7 +974,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         final anchor = widget.continuous && viewportChanged && !_metricsDirty
             ? _captureViewportAnchor()
             : null;
-        final nextScale = _fitFontScale(textWidth, viewportHeight);
+        // Fit only against the actual window limit, never the content-derived
+        // column: a short line must not shrink its own saved font size.
+        final nextScale = _fitFontScale(maximumTextWidth, viewportHeight);
         if (_lastFitScale != nextScale ||
             size != _lastViewportSize ||
             _metricsDirty) {
@@ -874,105 +986,119 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
           }
           _lastFitScale = nextScale;
         }
-        _ensureLineMetrics(textWidth, Directionality.of(context));
+        _ensureIntrinsicWidth(textDirection);
+        var textWidth = _textWidthForViewport(viewportWidth);
+        _ensureLineMetrics(textWidth, textDirection);
         // Include real fallback-font metrics, not just a nominal font-size
         // estimate, when a very short window cannot contain one expanded row.
         final availableRowHeight = math.max(1.0, viewportHeight - 8);
         if (_maximumRowHeight > availableRowHeight) {
           _fontScale *= availableRowHeight / _maximumRowHeight * 0.98;
           _metricsDirty = true;
-          _ensureLineMetrics(textWidth, Directionality.of(context));
+          _ensureIntrinsicWidth(textDirection);
+          textWidth = _textWidthForViewport(viewportWidth);
+          _ensureLineMetrics(textWidth, textDirection);
         }
+        final horizontalPadding = _horizontalPadding(viewportWidth);
         _lastViewportSize = size;
         _lastRequestedReadingLineY = widget.readingLineY;
         _lastReadingLineY = _readingLineY(viewportHeight, viewportWidth);
         _lastTopPadding = _topPad(viewportHeight);
         if (viewportChanged) _scheduleViewportRealignment(anchor);
 
-        return ClipRect(
-          child: Transform(
-            alignment: Alignment.center,
-            transform: widget.mirrorMode
-                ? (Matrix4.identity()..setEntry(0, 0, -1.0))
-                : Matrix4.identity(),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: _handleScrollNotification,
-                    child: CustomScrollView(
-                      controller: widget.scrollController,
-                      // 播放中的滚动模式始终由速度控制，零速不能通过拖动改变位置。
-                      physics: widget.continuous && widget.isPlaying
-                          ? const NeverScrollableScrollPhysics()
-                          : widget.physics ?? const ClampingScrollPhysics(),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: _topPad(viewportHeight)),
-                        ),
-                        SliverPadding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: horizontalPadding,
+        return Listener(
+          onPointerDown: _handleAnnotationPointerDown,
+          onPointerMove: _handleAnnotationPointerMove,
+          onPointerUp: _handleAnnotationPointerUp,
+          onPointerCancel: (_) {
+            _annotationTapCandidate = null;
+            _annotationTapHandled = false;
+          },
+          child: ClipRect(
+            child: Transform(
+              alignment: Alignment.center,
+              transform: widget.mirrorMode
+                  ? (Matrix4.identity()..setEntry(0, 0, -1.0))
+                  : Matrix4.identity(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleScrollNotification,
+                      child: CustomScrollView(
+                        controller: widget.scrollController,
+                        // 播放中的滚动模式始终由速度控制，零速不能通过拖动改变位置。
+                        physics: widget.continuous && widget.isPlaying
+                            ? const NeverScrollableScrollPhysics()
+                            : widget.physics ?? const ClampingScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: SizedBox(height: _topPad(viewportHeight)),
                           ),
-                          sliver: widget.lines.isEmpty
-                              ? SliverToBoxAdapter(
-                                  child: Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(
-                                        top: viewportHeight * 0.2,
-                                      ),
-                                      child: const Text(
-                                        '暂无内容',
-                                        style: TextStyle(
-                                          color: AppColors.textDisabled,
-                                          fontSize: 18,
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPadding,
+                            ),
+                            sliver: widget.lines.isEmpty
+                                ? SliverToBoxAdapter(
+                                    child: Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          top: viewportHeight * 0.2,
+                                        ),
+                                        child: const Text(
+                                          '暂无内容',
+                                          style: TextStyle(
+                                            color: AppColors.textDisabled,
+                                            fontSize: 18,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                )
-                              : SliverVariedExtentList(
-                                  itemExtentBuilder: (index, dimensions) =>
-                                      _lineHeights[index],
-                                  delegate: MeasuredLineDelegate(
-                                    (context, index) => _buildLine(
-                                      index,
-                                      textWidth,
-                                      viewportHeight,
+                                  )
+                                : SliverVariedExtentList(
+                                    itemExtentBuilder: (index, dimensions) =>
+                                        _lineHeights[index],
+                                    delegate: MeasuredLineDelegate(
+                                      (context, index) => _buildLine(
+                                        index,
+                                        textWidth,
+                                        viewportHeight,
+                                      ),
+                                      count: widget.lines.length,
+                                      contentHeight: _contentHeight,
                                     ),
-                                    count: widget.lines.length,
-                                    contentHeight: _contentHeight,
                                   ),
-                                ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: _bottomPad(viewportHeight)),
-                        ),
-                      ],
+                          ),
+                          SliverToBoxAdapter(
+                            child: SizedBox(height: _bottomPad(viewportHeight)),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (widget.showReadingFrame && !widget.continuous)
-                  Positioned.fill(
-                    child: AnimatedBuilder(
-                      animation: widget.scrollController,
-                      builder: (context, _) {
-                        final row = debugCurrentRowRect;
-                        return row == null
-                            ? const SizedBox.shrink()
-                            : ReadingAreaFrame(
-                                key: const ValueKey('reading-area-frame'),
-                                row: row,
-                                borderWidth: widget.readingAreaBorderWidth,
-                              );
-                      },
+                  if (widget.showReadingFrame && !widget.continuous)
+                    Positioned.fill(
+                      child: AnimatedBuilder(
+                        animation: widget.scrollController,
+                        builder: (context, _) {
+                          final row = debugCurrentRowRect;
+                          return row == null
+                              ? const SizedBox.shrink()
+                              : ReadingAreaFrame(
+                                  key: const ValueKey('reading-area-frame'),
+                                  row: row,
+                                  borderWidth: widget.readingAreaBorderWidth,
+                                );
+                        },
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -990,18 +1116,182 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: _lineVerticalPadding),
       child: ReadingEmphasisLine(
+        key: _ReadingLineKey(line, this),
         line: line,
         geometry: _textGeometry,
         presentation: _textPresentation,
         glyphCache: _glyphCache,
         width: textWidth,
         direction: Directionality.of(context),
-        onCharTap: widget.onCharTap,
+        onCharTap: (rawIndex) {
+          if (!_annotationTapHandled) widget.onCharTap?.call(rawIndex);
+        },
         scrollController: widget.scrollController,
         contentTop:
             _topPad(viewportHeight) + _lineTops[index] + _lineVerticalPadding,
         viewportHeight: viewportHeight,
+        annotations: _lineAnnotations[index],
+        showAnnotations: widget.showAnnotations,
+        annotationStyle: widget.annotationStyle,
+        annotationLeadingSpace:
+            !widget.showAnnotations || _lineAnnotations[index].isEmpty
+            ? 0
+            : _annotationLeadingSpace(index, textWidth, viewportHeight),
+        handleAnnotationLabelTaps: false,
       ),
     );
+  }
+
+  void _handleAnnotationPointerDown(PointerDownEvent event) {
+    _annotationTapHandled = false;
+    _annotationTapCandidate = null;
+    _annotationPointerMoved = false;
+    if (!widget.showAnnotations ||
+        widget.annotations.isEmpty ||
+        event.buttons != kPrimaryButton ||
+        !widget.scrollController.hasClients ||
+        _lineTops.isEmpty)
+      return;
+    final render = context.findRenderObject();
+    if (render is! RenderBox) return;
+    final local = render.globalToLocal(event.position);
+    final contentY =
+        local.dy + widget.scrollController.offset - _lastTopPadding;
+    final current = _findLineForContentOffset(contentY);
+    // A following line borrows only its immediate predecessor's empty space.
+    for (
+      var index = current;
+      index <= current + 1 && index < widget.lines.length;
+      index++
+    ) {
+      final state = _ReadingLineKey(widget.lines[index], this).currentState;
+      final box = state?.context.findRenderObject();
+      if (state != null &&
+          box is RenderBox &&
+          state
+              .annotationsAt(
+                box.globalToLocal(event.position),
+                labelsOnly: true,
+              )
+              .isNotEmpty) {
+        _annotationTapHandled = true;
+        _annotationTapCandidate = (
+          state: state,
+          position: event.position,
+          time: event.timeStamp,
+          pointer: event.pointer,
+        );
+        return;
+      }
+    }
+  }
+
+  void _handleAnnotationPointerMove(PointerMoveEvent event) {
+    final candidate = _annotationTapCandidate;
+    if (candidate != null &&
+        candidate.pointer == event.pointer &&
+        (event.position - candidate.position).distance > kTouchSlop) {
+      _annotationPointerMoved = true;
+    }
+  }
+
+  void _handleAnnotationPointerUp(PointerUpEvent event) {
+    final candidate = _annotationTapCandidate;
+    if (candidate == null || candidate.pointer != event.pointer) return;
+    _annotationTapCandidate = null;
+    if (_annotationPointerMoved ||
+        !candidate.state.mounted ||
+        event.timeStamp - candidate.time >= kLongPressTimeout)
+      return;
+    final box = candidate.state.context.findRenderObject();
+    if (box is RenderBox) {
+      candidate.state.openAnnotationLabelAt(box.globalToLocal(event.position));
+    }
+  }
+
+  /// Resolve note intervals to authored lines once. A cursor or visibility
+  /// update must not scan all notes for every visible line, or dirty metrics.
+  void _ensureAnnotationIndex() {
+    if (identical(_indexedAnnotationLines, widget.lines) &&
+        identical(_indexedAnnotations, widget.annotations))
+      return;
+    _indexedAnnotationLines = widget.lines;
+    _indexedAnnotations = widget.annotations;
+    final nonEmpty = <int>[
+      for (var i = 0; i < widget.lines.length; i++)
+        if (widget.lines[i].characters.isNotEmpty) i,
+    ];
+    final notes = List.generate(
+      widget.lines.length,
+      (_) => <ReadingAnnotation>{},
+    );
+    for (final note in widget.annotations) {
+      if (!note.isAnchored) continue;
+      for (final range in note.ranges) {
+        if (range.start >= range.end) continue;
+        var low = 0;
+        var high = nonEmpty.length;
+        while (low < high) {
+          final middle = (low + high) >> 1;
+          final last = widget.lines[nonEmpty[middle]].characters.last;
+          if (last.rawIndex + last.char.length <= range.start) {
+            low = middle + 1;
+          } else {
+            high = middle;
+          }
+        }
+        for (var i = low; i < nonEmpty.length; i++) {
+          final index = nonEmpty[i];
+          if (widget.lines[index].characters.first.rawIndex >= range.end) break;
+          notes[index].add(note);
+        }
+      }
+    }
+    _lineAnnotations = [
+      for (final lineNotes in notes)
+        lineNotes.isEmpty
+            ? const <ReadingAnnotation>[]
+            : List<ReadingAnnotation>.unmodifiable(lineNotes),
+    ];
+  }
+
+  double _annotationLeadingSpace(
+    int index,
+    double textWidth,
+    double viewportHeight,
+  ) {
+    if (widget.annotationStyle.preferredFontSizeFor(
+          _largestFontSize * _fontScale,
+        ) <
+        ReadingAnnotationStyle.minimumFontSize)
+      return 0;
+    // The first line borrows from the existing scroll padding. Recompute it
+    // after viewport/reading-line changes; no new padding is ever introduced.
+    final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;
+    if (index == 0) {
+      return math.min(
+        cap,
+        math.max(0, _topPad(viewportHeight) + _lineVerticalPadding),
+      );
+    }
+    return _annotationLeadingSpaces.putIfAbsent(index, () {
+      final previous = widget.lines[index - 1];
+      final direction = Directionality.of(context);
+      final blank = previous.characters.isEmpty
+          ? _textGeometry.emptyHeight
+          : _ReadingLineKey(
+                  previous,
+                  this,
+                ).currentState?.annotationTrailingSpaceFor(
+                  geometry: _textGeometry,
+                  width: textWidth,
+                  direction: direction,
+                ) ??
+                ReadingAnnotationLayout.trailingSpace(
+                  _layoutForLine(previous, textWidth, direction),
+                  _glyphCache,
+                );
+      return math.min(cap, blank + _lineVerticalPadding * 2);
+    });
   }
 }

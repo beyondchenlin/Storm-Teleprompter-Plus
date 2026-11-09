@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
 import 'connection_provider.dart';
 
 /// 稿件管理状态（前端）
@@ -67,14 +68,26 @@ class ArticleProvider with ChangeNotifier {
   Future<Article?> createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     String? folderId,
   }) async {
     try {
+      _error = null;
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleCreate,
-          data: {'title': title, 'content': content, 'folderId': ?folderId},
+          data: {
+            'title': title,
+            'content': content,
+            'annotations': annotations.map((note) => note.toJson()).toList(),
+            'folderId': ?folderId,
+            'teleprompterSettings': ?teleprompterSettings,
+          },
         );
+        if (response.type == WsMessageType.error) {
+          throw StateError(response.data['message'] as String? ?? '保存稿件失败');
+        }
         if (response.type == WsMessageType.articleCreateResponse) {
           final article = Article.fromJson(
             response.data['article'] as Map<String, dynamic>,
@@ -97,13 +110,26 @@ class ArticleProvider with ChangeNotifier {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
   }) async {
     try {
+      _error = null;
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleUpdate,
-          data: {'id': id, 'title': ?title, 'content': ?content},
+          data: {
+            'id': id,
+            'title': ?title,
+            'content': ?content,
+            'teleprompterSettings': ?teleprompterSettings,
+            if (annotations != null)
+              'annotations': annotations.map((note) => note.toJson()).toList(),
+          },
         );
+        if (response.type == WsMessageType.error) {
+          throw StateError(response.data['message'] as String? ?? '保存稿件失败');
+        }
         if (response.type == WsMessageType.articleUpdateResponse &&
             response.data['success'] == true) {
           final article = Article.fromJson(

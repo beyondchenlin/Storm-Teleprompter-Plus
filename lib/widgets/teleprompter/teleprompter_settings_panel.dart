@@ -14,8 +14,13 @@ import '../settings/reading_emphasis_settings_section.dart';
 /// 按播放进度条、正文外观、排版、阅读区域分组。
 class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
+  final VoidCallback? onAnnotationAppearance;
 
-  const TeleprompterSettingsPanel({super.key, required this.onClose});
+  const TeleprompterSettingsPanel({
+    super.key,
+    required this.onClose,
+    this.onAnnotationAppearance,
+  });
 
   @override
   State<TeleprompterSettingsPanel> createState() =>
@@ -86,6 +91,24 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         _buildMirrorTextSwitch(context, provider, settings),
                         _buildExtraBoldSlider(context, provider, settings),
+                        if (widget.onAnnotationAppearance != null)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.palette_outlined,
+                              size: 20,
+                            ),
+                            title: const Text(
+                              '批注外观',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            subtitle: const Text(
+                              '字体、字号和颜色 · 实时预览',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                            trailing: const Icon(Icons.chevron_right, size: 18),
+                            onTap: widget.onAnnotationAppearance,
+                          ),
                         const Divider(height: 24),
 
                         // 播放中仍可调整；四项新设置始终读取全局状态。
@@ -665,13 +688,13 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ),
-        // 已读着色与当前字突出相互独立。
+        // 已读段落着色与当前段高亮相互独立。
         SwitchListTile(
           dense: true,
           secondary: const Icon(Icons.opacity, size: 20),
-          title: const Text('标记已读文字', style: TextStyle(fontSize: 14)),
+          title: const Text('标记已读段落', style: TextStyle(fontSize: 14)),
           subtitle: const Text(
-            '已读过的文字使用上方设置的已读颜色',
+            '进入下一段后，上一整段使用已读颜色',
             style: TextStyle(fontSize: 12),
           ),
           value: settings.grayReadChars,

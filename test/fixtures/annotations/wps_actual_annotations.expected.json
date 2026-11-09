@@ -1,0 +1,60 @@
+{
+  "applicationProgId": "kwps.Application",
+  "applicationVersion": "12.0",
+  "syntheticFixture": true,
+  "creationMethod": "Office COM Comments.Add then native SaveAs",
+  "requestedStoryText": "学习的关键，不是记住更多。\r而是能够真正用得出来。\r接下来，我们看一个简单的例子。\r重复词：理解，再理解。\r先想清楚。\r再讲明白。\r",
+  "comments": [
+    {
+      "ordinal": 1,
+      "requestedQuote": "不",
+      "requestedNote": "重读",
+      "officeStart": 6,
+      "officeEnd": 7,
+      "officeQuote": "不",
+      "officeNote": "重读\r",
+      "rawStart": 6,
+      "rawEnd": 7,
+      "rawQuote": "不"
+    },
+    {
+      "ordinal": 2,
+      "requestedQuote": "用得出来",
+      "requestedNote": "放慢语速\n把意思讲清楚",
+      "officeStart": 21,
+      "officeEnd": 25,
+      "officeQuote": "用得出来",
+      "officeNote": "放慢语速\r把意思讲清楚\r",
+      "rawStart": 19,
+      "rawEnd": 23,
+      "rawQuote": "用得出来"
+    },
+    {
+      "ordinal": 3,
+      "requestedQuote": "理解",
+      "requestedNote": "只标注第二处理解",
+      "officeStart": 52,
+      "officeEnd": 54,
+      "officeQuote": "理解",
+      "officeNote": "只标注第二处理解\r",
+      "rawStart": 47,
+      "rawEnd": 49,
+      "rawQuote": "理解"
+    },
+    {
+      "ordinal": 4,
+      "requestedQuote": "先想清楚。\r再讲明白。",
+      "requestedNote": "跨段提示\n先想，再说",
+      "officeStart": 57,
+      "officeEnd": 68,
+      "officeQuote": "先想清楚。\r再讲明白。",
+      "officeNote": "跨段提示\r先想，再说\r",
+      "rawStart": 50,
+      "rawEnd": 60,
+      "rawQuote": "先想清楚。再讲明白。"
+    }
+  ],
+  "actualStoryText": "学习的关键，不是记住更多。\r而是能够真正用得出来。\r接下来，我们看一个简单的例子。\r重复词：理解，再理解。\r先想清楚。\r再讲明白。\r\r",
+  "savedCommentCount": 4,
+  "savedFileBytes": 12768
+}

@@ -1,3 +1,4 @@
+import 'package:storm_teleprompter_plus/models/reading_annotation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,8 @@ class QuickTestArticles extends ArticleProvider {
   Future<void> init() async {}
   @override
   Future<Article?> createArticle({
+    List<ReadingAnnotation> annotations = const [],
+    Map<String, dynamic>? teleprompterSettings,
     required String title,
     String content = '',
     String? folderId,
@@ -35,6 +38,8 @@ class QuickTestArticles extends ArticleProvider {
       id: 'saved-$writes',
       title: title,
       content: content,
+      annotations: annotations,
+      teleprompterSettings: teleprompterSettings,
       folderId: folderId,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -46,6 +51,8 @@ class QuickTestArticles extends ArticleProvider {
   @override
   Future<Article?> updateArticle(
     String id, {
+    List<ReadingAnnotation>? annotations,
+    Map<String, dynamic>? teleprompterSettings,
     String? title,
     String? content,
   }) async {
@@ -53,7 +60,12 @@ class QuickTestArticles extends ArticleProvider {
     if (fail) return null;
     final article = articles
         .firstWhere((a) => a.id == id)
-        .copyWith(title: title, content: content);
+        .copyWith(
+          title: title,
+          content: content,
+          annotations: annotations,
+          teleprompterSettings: teleprompterSettings,
+        );
     upsertArticle(article);
     return article;
   }

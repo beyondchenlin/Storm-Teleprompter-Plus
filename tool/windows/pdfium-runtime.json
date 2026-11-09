@@ -1,0 +1,8 @@
+{
+  "revision": "chromium/7811",
+  "version": "149.0.7811.0",
+  "fileName": "pdfium.dll",
+  "size": 7176704,
+  "sha256": "019b6ee6e54e5508002e43c5199b00f6caca26d32dd23c7bb229ff6855cd5394",
+  "source": "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7811/pdfium-win-x64.tgz"
+}

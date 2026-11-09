@@ -28,6 +28,7 @@ class AppColorPickerDialog extends StatefulWidget {
     this.resetColor,
     this.resetLabel = '恢复默认',
     this.onReset,
+    this.enableAlpha = true,
   });
 
   final String title;
@@ -35,6 +36,7 @@ class AppColorPickerDialog extends StatefulWidget {
   final Color? resetColor;
   final String resetLabel;
   final VoidCallback? onReset;
+  final bool enableAlpha;
 
   static Future<Color?> show(
     BuildContext context, {
@@ -43,6 +45,7 @@ class AppColorPickerDialog extends StatefulWidget {
     Color? resetColor,
     String resetLabel = '恢复默认',
     VoidCallback? onReset,
+    bool enableAlpha = true,
   }) {
     return showDialog<Color>(
       context: context,
@@ -52,6 +55,7 @@ class AppColorPickerDialog extends StatefulWidget {
         resetColor: resetColor,
         resetLabel: resetLabel,
         onReset: onReset,
+        enableAlpha: enableAlpha,
       ),
     );
   }
@@ -103,7 +107,7 @@ class _AppColorPickerDialogState extends State<AppColorPickerDialog> {
                     _hexError = null;
                     _syncHex(color);
                   }),
-                  enableAlpha: true,
+                  enableAlpha: widget.enableAlpha,
                   displayThumbColor: true,
                   colorPickerWidth: pickerWidth,
                   pickerAreaHeightPercent: 0.62,
@@ -118,8 +122,10 @@ class _AppColorPickerDialogState extends State<AppColorPickerDialog> {
                 child: TextField(
                   controller: _hexController,
                   decoration: InputDecoration(
-                    labelText: 'HEX 颜色值',
-                    hintText: '#AARRGGBB 或 #RRGGBB',
+                    labelText: '十六进制颜色值',
+                    hintText: widget.enableAlpha
+                        ? '#AARRGGBB 或 #RRGGBB'
+                        : '#RRGGBB',
                     errorText: _hexError,
                     border: const OutlineInputBorder(),
                     isDense: true,
@@ -153,7 +159,14 @@ class _AppColorPickerDialogState extends State<AppColorPickerDialog> {
             child: Text(widget.resetLabel),
           ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _pickerColor),
+          onPressed: _hexError != null
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  widget.enableAlpha
+                      ? _pickerColor
+                      : _pickerColor.withAlpha(255),
+                ),
           child: const Text('确定'),
         ),
       ],

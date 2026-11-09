@@ -21,6 +21,8 @@ class SettingsProvider with ChangeNotifier {
       .toReadingEmphasisMap();
   Future<void> _settingsWriteTail = Future<void>.value();
   int _ordinarySettingsEditVersion = 0;
+  final Map<String, dynamic> _pendingDefaultAnnotationAppearance = {};
+  int _defaultAnnotationAppearanceEditVersion = 0;
   // 只保护当前连接的待保存普通设置，旧连接的失效写入不阻止重连加载。
   final Map<int, int> _ordinarySettingsQueuedWrites = {};
   int _readingEmphasisEditVersion = 0;
@@ -138,10 +140,26 @@ class SettingsProvider with ChangeNotifier {
         }
       }
     }
-    for (final key in ['autoScrollMode', 'pixelsPerSecond']) {
+    for (final key in [
+      'autoScrollMode',
+      'pixelsPerSecond',
+      'showAnnotations',
+    ]) {
       if (settings.containsKey(key) &&
           _articleOverrides[key] != settings[key]) {
         _articleOverrides[key] = settings[key];
+        changed = true;
+      }
+    }
+    // 批注外观与显示开关一起同步，但不改变从端自设的正文布局。
+    final appearance = mergedSettings.mergeOverrides({
+      for (final key in AppSettings.annotationAppearanceKeys)
+        if (settings.containsKey(key)) key: settings[key],
+    }).toAnnotationAppearanceMap();
+    for (final key in AppSettings.annotationAppearanceKeys) {
+      if (settings.containsKey(key) &&
+          _articleOverrides[key] != appearance[key]) {
+        _articleOverrides[key] = appearance[key];
         changed = true;
       }
     }
@@ -181,6 +199,72 @@ class SettingsProvider with ChangeNotifier {
     }
     _syncTeleprompterSettingsToBackend();
   }
+
+  Future<void> setShowAnnotations(bool value) =>
+      _setAndSave(overrideData: {'showAnnotations': value});
+
+  Future<void> setAnnotationFontFamily(String value) =>
+      setAnnotationAppearance(fontFamily: value);
+
+  Future<void> setAnnotationFontSize(double value) =>
+      setAnnotationAppearance(fontSize: value);
+
+  Future<void> setAnnotationColor(int value) =>
+      setAnnotationAppearance(color: value);
+
+  /// 一次更新与保存，避免恢复默认时留下三项不同步的中间快照。
+  Future<void> setAnnotationAppearance({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) {
+    final patch = _annotationAppearancePatch(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: color,
+    );
+    if (patch.isEmpty) return Future<void>.value();
+    return _setAndSave(overrideData: patch);
+  }
+
+  /// 应用设置页只更改新稿默认值，播放中的稿件快照保持独立。
+  Future<void> setDefaultAnnotationAppearance({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) async {
+    final patch = _annotationAppearancePatch(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: color,
+    );
+    if (patch.isEmpty) return;
+    _defaultAnnotationAppearanceEditVersion++;
+    _pendingDefaultAnnotationAppearance.addAll(patch);
+    _settings = _settings.mergeOverrides(patch);
+    notifyListeners();
+    await _saveSettings(throwOnError: true);
+    _syncTeleprompterSettingsToBackend();
+  }
+
+  Map<String, dynamic> _annotationAppearancePatch({
+    String? fontFamily,
+    double? fontSize,
+    int? color,
+  }) => {
+    if (fontFamily != null)
+      'annotationFontFamily': AppSettings.normalizeAnnotationFontFamily(
+        fontFamily,
+      ),
+    if (fontSize != null)
+      'annotationFontSize': AppSettings.normalizeAnnotationFontSize(fontSize),
+    if (color != null)
+      'annotationColor': AppSettings.normalizeAnnotationColor(color),
+  };
+
+  Future<void> resetAnnotationAppearance() => _setAndSave(
+    overrideData: const AppSettings().toAnnotationAppearanceMap(),
+  );
 
   void _syncTeleprompterSettingsToBackend() {
     final connection = _connection;
@@ -228,7 +312,10 @@ class SettingsProvider with ChangeNotifier {
               !hadOrdinaryWrites &&
               !_ordinarySettingsQueuedWrites.containsKey(generation) &&
               pendingResetAtStart == null) {
-            _settings = loaded;
+            // 保存失败的批注选择继续可见，重连不能把用户尚未重试的选择吞掉。
+            _settings = loaded.mergeOverrides(
+              _pendingDefaultAnnotationAppearance,
+            );
           }
           final revision = response.data['readingEmphasisRevision'];
           if (revision is int && revision >= 0) {
@@ -251,8 +338,9 @@ class SettingsProvider with ChangeNotifier {
   }
 
   /// 保存设置到后端
-  Future<void> _saveSettings() async {
+  Future<void> _saveSettings({bool throwOnError = false}) async {
     final snapshot = _settings;
+    final annotationEditVersion = _defaultAnnotationAppearanceEditVersion;
     final connection = _connection;
     final generation = _readingEmphasisConnectionGeneration;
     _ordinarySettingsEditVersion++;
@@ -268,6 +356,16 @@ class SettingsProvider with ChangeNotifier {
           await _enqueueSettingsWrite(
             () => _writeSettingsSnapshot(connection, generation, snapshot),
           );
+          // 其它已确认的全量保存也可带上待保存外观；旧确认不能清掉新选择。
+          if (annotationEditVersion ==
+                  _defaultAnnotationAppearanceEditVersion &&
+              _pendingDefaultAnnotationAppearance.entries.every(
+                (entry) =>
+                    snapshot.toAnnotationAppearanceMap()[entry.key] ==
+                    entry.value,
+              )) {
+            _pendingDefaultAnnotationAppearance.clear();
+          }
         } finally {
           final remaining = _ordinarySettingsQueuedWrites[generation]! - 1;
           if (remaining == 0) {
@@ -276,9 +374,12 @@ class SettingsProvider with ChangeNotifier {
             _ordinarySettingsQueuedWrites[generation] = remaining;
           }
         }
+      } else if (throwOnError) {
+        throw StateError('设置服务未连接，默认批注外观未保存');
       }
     } catch (e) {
       debugPrint('[SettingsProvider] 保存设置失败: $e');
+      if (throwOnError) rethrow;
     }
   }
 
@@ -796,6 +897,8 @@ class SettingsProvider with ChangeNotifier {
 
   /// 完全重置所有设置为默认值
   Future<void> resetAllSettings() async {
+    _defaultAnnotationAppearanceEditVersion++;
+    _pendingDefaultAnnotationAppearance.clear();
     _settings = const AppSettings();
     _ordinarySettingsEditVersion++;
     final defaults = _settings.toReadingEmphasisMap();
@@ -817,6 +920,8 @@ class SettingsProvider with ChangeNotifier {
 
   /// 批量更新设置
   Future<void> updateSettings(AppSettings newSettings) async {
+    _defaultAnnotationAppearanceEditVersion++;
+    _pendingDefaultAnnotationAppearance.clear();
     final readingChanged = !_mapEquals(
       _settings.toReadingEmphasisMap(),
       newSettings.toReadingEmphasisMap(),

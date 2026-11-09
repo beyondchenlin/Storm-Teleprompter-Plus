@@ -1,7 +1,7 @@
 name: storm_teleprompter_plus
 description: "BK 提词器 - 智能提词器应用"
 publish_to: 'none'
-version: 1.7.3+5
+version: 1.7.7+9
 
 environment:
   sdk: ^3.12.1
@@ -22,6 +22,9 @@ dependencies:
   # 文件/路径
   path_provider: ^2.1.4
   ffi: ^2.2.0
+  # Pinned to the last release compatible with Flutter 3.44 / Dart 3.12.
+  pdfium_flutter: 0.2.1
+  pdfium_dart: 0.2.1
 
   # HTTP 下载（ASR 模型下载）
   http: ^1.2.2

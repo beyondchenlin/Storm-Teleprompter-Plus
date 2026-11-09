@@ -21,6 +21,7 @@ $release = Resolve-BKVersion -ProjectRoot $projectRoot -Version $Version -BuildN
 $buildDirectory = Join-Path $projectRoot 'build\windows\x64\runner\Release'
 $executable = Join-Path $buildDirectory 'BK 提词器.exe'
 Assert-BKExecutableBranding -Path $executable -Release $release
+[void](Assert-BKPdfiumRuntime -ProjectRoot $projectRoot -BuildDirectory $buildDirectory)
 
 $receiptPath = Join-Path $buildDirectory 'bk-build-receipt.json'
 if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
@@ -86,6 +87,8 @@ try {
   foreach ($name in @('Apache-2.0.txt', 'ChineseModel-README.md', 'ChineseModel-SOURCE.txt', 'model-license-source.json')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('windows\vendor\' + $name)) -Destination $notices
   }
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows\vendor\pdfium') -Destination (Join-Path $notices 'pdfium') -Recurse
+  Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\pdf-import-notices.md') -Destination $notices
   $modelDestination = Join-Path $stage ('bundled_models\' + $model.modelId)
   [IO.Directory]::CreateDirectory($modelDestination) | Out-Null
   foreach ($entry in $model.files) {
@@ -111,6 +114,10 @@ BK 提词器 $($release.version)
 6. 升级前保存稿件并退出软件，然后运行新版安装程序。升级会沿用安装位置并保留用户数据。
 7. 在系统“应用和功能”中卸载，或从开始菜单运行卸载程序。卸载会保留稿件、设置及用户模型；本安装器不会清除它们。
 8. 旧便携版的 app_data（应用数据）仍保留在原位置。不要将安装目录选为旧版数据目录，也不要直接删除旧目录；按产品迁移说明备份后迁移。
+9. 朗读批注：在编辑器中选中原文字词，点击“添加批注”，填写重读、停顿或语气提示；输入时可在下方实时预览，保存后可点击预览中的字词框继续修改。
+10. 文档批注导入：支持 .docx（文字文档格式）和 .pdf（便携式文档格式）中的批注。没有明确字词选区的备注会保留为“待定位”；在正文中选中字词，再进入“批注管理”绑定。
+11. 提词页面点击“批注：开／关”显示或隐藏提示。长备注只缩略显示，全文保留；点击备注文字，或长按、右键点击原文字词框，可以查看全文。
+12. 编辑页和提词页的调色板按钮可调整“批注外观”：独立字体、自动或 8–36 像素首选字号、常用及自定义颜色，预览后点击“应用”。空间不足会自动缩小并提示实际字号，正文位置不变；应用设置里另有批注默认外观。
 
 本分发包不含个人稿件、设置或运行日志。
 开源许可证、上游作者署名和本产品定制部分署名见 LICENSE（许可证）；第三方组件说明见 third_party（第三方说明）目录。

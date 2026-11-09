@@ -3,9 +3,14 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../models/app_settings.dart';
+import '../../models/reading_annotation.dart';
+import '../../models/reading_annotation_style.dart';
 import '../../models/script_character.dart';
+import 'reading_annotation_layer.dart';
+import 'reading_glyph_ink_cache.dart';
 
 /// Layout reserves the largest supported emphasis, even when emphasis is off.
 /// Changing a cursor, a colour or a scale is consequently a paint-only change.
@@ -28,6 +33,7 @@ class ReadingGrapheme {
   final int rawStart;
   final int rawEnd;
   final ScriptCharacter format;
+  final ScriptParagraph? paragraph;
 
   const ReadingGrapheme({
     required this.text,
@@ -36,6 +42,7 @@ class ReadingGrapheme {
     required this.rawStart,
     required this.rawEnd,
     required this.format,
+    this.paragraph,
   });
 
   bool containsRawIndex(int index) => index >= rawStart && index <= rawEnd;
@@ -242,6 +249,8 @@ class ReadingTextLayout {
   final Map<TextStyle, _ItalicShearEnvelope> _italicEnvelopes;
   late final List<ReadingVisualRow> rows = _computeRows();
   final LinkedHashMap<int, ReadingGlyphPlacement> _placements = LinkedHashMap();
+  final LinkedHashMap<int, Rect> _annotationInkBounds = LinkedHashMap();
+  ReadingGlyphInkCache? _annotationInkSource;
   static const int _placementCacheLimit = 2048;
 
   ReadingTextLayout._({
@@ -308,6 +317,19 @@ class ReadingTextLayout {
 
   static List<ReadingGrapheme> _splitGraphemes(ScriptLine line) {
     if (line.characters.isEmpty) return const [];
+    // Metadata is resolved once with geometry, never by scanning the script
+    // while the reading cursor or microphone level changes. Legacy callers
+    // that construct a ScriptLine directly still get whole-line colouring.
+    final paragraph =
+        line.paragraph ??
+        ScriptParagraph(
+          index: line.lineIndex,
+          rawStart: line.characters.first.rawIndex,
+          rawEnd:
+              line.characters.last.rawIndex +
+              line.characters.last.char.length -
+              1,
+        );
     final text = line.text;
     final result = <ReadingGrapheme>[];
     var sourceIndex = 0;
@@ -337,6 +359,7 @@ class ReadingTextLayout {
           rawStart: rawStart,
           rawEnd: line.characters[lastIndex].rawIndex + end - lastOffset - 1,
           format: first,
+          paragraph: paragraph,
         ),
       );
       offset = end;
@@ -346,6 +369,10 @@ class ReadingTextLayout {
 
   double get height =>
       graphemes.isEmpty ? geometry.emptyHeight : _painter.height;
+
+  /// Width of this authored line without automatic wrapping. This shares the
+  /// same reserved emphasis and italic ink envelopes as the visible layout.
+  double get maxIntrinsicWidth => _painter.maxIntrinsicWidth;
 
   List<ReadingVisualRow> _computeRows() => _painter
       .computeLineMetrics()
@@ -479,6 +506,155 @@ class ReadingTextLayout {
     }
   }
 
+  /// Enumerate membership in one visual line, not intersection with its
+  /// vertical rectangle. Font metrics can round adjacent line tops/heights
+  /// differently, leaving a fractional overlap between their rectangles.
+  /// That overlap is useful for paint clipping but must never merge the two
+  /// lines' annotation envelopes or duplicate a word's annotation frame.
+  Iterable<ReadingGlyphPlacement> placementsForRow(int rowIndex) sync* {
+    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length) return;
+    final row = rows[rowIndex];
+    if (row.end <= row.start) return;
+    final first = _indexForCodeUnit(row.start);
+    final last = _indexForCodeUnit(row.end - 1);
+    for (var index = first; index <= last; index++) {
+      final placement = placementAt(index);
+      if (identical(placement.row, row)) yield placement;
+    }
+  }
+
+  ({int start, int end})? rawRangeForRow(int rowIndex) {
+    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length)
+      return null;
+    final row = rows[rowIndex];
+    if (row.end <= row.start) return null;
+    return (
+      start: graphemes[_indexForCodeUnit(row.start)].rawStart,
+      end: graphemes[_indexForCodeUnit(row.end - 1)].rawEnd + 1,
+    );
+  }
+
+  /// Annotation geometry only: union the real ink under every permitted
+  /// emphasis state. Body cells, baselines and line metrics never use this.
+  /// Until all native measurements are ready, retain the old conservative
+  /// font envelope; a partial result must never expose unsafe whitespace.
+  Rect maximumGlyphBounds(
+    ReadingGlyphPlacement placement,
+    ReadingGlyphPainterCache cache, {
+    bool resolveInk = true,
+  }) {
+    if (!identical(_annotationInkSource, cache.inkCache)) {
+      _annotationInkSource = cache.inkCache;
+      _annotationInkBounds.clear();
+    }
+    final cached = _annotationInkBounds.remove(placement.grapheme.start);
+    if (cached != null) {
+      _annotationInkBounds[placement.grapheme.start] = cached;
+      return cached;
+    }
+    if (!resolveInk) return _conservativeGlyphBounds(placement, cache);
+    final glyph = placement.grapheme;
+    final baseStyle = geometry
+        .styleFor(glyph.format)
+        .copyWith(
+          height: ui.kTextHeightNone,
+          color: Colors.white,
+          decorationColor: Colors.white,
+          // Decorations add ink to the same glyph. Their combined raster covers
+          // undecorated text too, including underlined spaces. The translucent
+          // source highlight remains a background and is intentionally excluded.
+          decoration: TextDecoration.combine([
+            TextDecoration.underline,
+            TextDecoration.lineThrough,
+          ]),
+        );
+    var complete = true;
+    Rect? inkUnion;
+    for (final weight in {geometry.normalWeight, geometry.boldWeight}) {
+      final style = baseStyle.copyWith(fontWeight: weight);
+      final painter = cache.painterFor(glyph.text, style, direction);
+      final ink = cache.inkCache.boundsFor(
+        glyph.text,
+        style,
+        direction,
+        painter,
+      );
+      if (ink == null) {
+        complete = false;
+        continue;
+      }
+      if (ink.isEmpty) continue;
+      final baseline = painter.computeDistanceToActualBaseline(
+        TextBaseline.alphabetic,
+      );
+      // The real renderer scales the base-size canvas, rather than shaping a
+      // larger font. Apply its identical origin and baseline transform here.
+      for (final scale in const [1.0, readingEmphasisMaximumScale]) {
+        final origin = Offset(
+          placement.paintAnchorX - painter.width * scale / 2,
+          placement.row.baseline - baseline * scale,
+        );
+        final bounds = Rect.fromLTRB(
+          origin.dx + ink.left * scale,
+          origin.dy + ink.top * scale,
+          origin.dx + ink.right * scale,
+          origin.dy + ink.bottom * scale,
+        );
+        inkUnion = inkUnion?.expandToInclude(bounds) ?? bounds;
+      }
+    }
+    if (complete) {
+      // The native cache already includes a one-logical-pixel antialiasing
+      // guard, which scales with the same canvas. Do not consume another band
+      // of whitespace by applying that guard twice.
+      final guarded = inkUnion;
+      final resolved = guarded == null
+          ? Rect.fromLTWH(
+              placement.cell.left,
+              placement.row.baseline,
+              placement.cell.width,
+              0,
+            )
+          : Rect.fromLTRB(
+              math.min(placement.cell.left, guarded.left),
+              guarded.top,
+              math.max(placement.cell.right, guarded.right),
+              guarded.bottom,
+            );
+      // Completed geometry belongs to this immutable body layout. Retaining a
+      // bounded set prevents annotation-only refreshes from re-rasterizing
+      // glyphs evicted from the smaller native measurement cache.
+      if (_annotationInkBounds.length >= _placementCacheLimit) {
+        _annotationInkBounds.remove(_annotationInkBounds.keys.first);
+      }
+      _annotationInkBounds[placement.grapheme.start] = resolved;
+      return resolved;
+    }
+    return _conservativeGlyphBounds(placement, cache);
+  }
+
+  Rect _conservativeGlyphBounds(
+    ReadingGlyphPlacement placement,
+    ReadingGlyphPainterCache cache,
+  ) {
+    final painter = cache.painterFor(
+      placement.grapheme.text,
+      geometry
+          .styleFor(placement.grapheme.format, reserve: true)
+          .copyWith(height: ui.kTextHeightNone, letterSpacing: 0),
+      direction,
+    );
+    final baseline = painter.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    return Rect.fromLTRB(
+      placement.cell.left,
+      placement.row.baseline - baseline,
+      placement.cell.right,
+      placement.row.baseline + painter.height - baseline,
+    );
+  }
+
   void dispose() => _painter.dispose();
 }
 
@@ -487,12 +663,14 @@ class ReadingGlyphAppearance {
   final TextStyle style;
   final double scale;
   final bool isCurrent;
+  final bool isCurrentParagraph;
   final bool isRead;
 
   const ReadingGlyphAppearance({
     required this.style,
     required this.scale,
     required this.isCurrent,
+    this.isCurrentParagraph = false,
     required this.isRead,
   });
 }
@@ -529,11 +707,15 @@ class ReadingTextPresentation {
     ReadingTextGeometry geometry,
   ) {
     final current = !continuous && glyph.containsRawIndex(currentIndex);
-    final read = !continuous && glyph.rawEnd < currentIndex;
+    final paragraph = glyph.paragraph;
+    final currentParagraph =
+        !continuous && (paragraph?.containsRawIndex(currentIndex) ?? current);
+    final read =
+        !continuous && (paragraph?.rawEnd ?? glyph.rawEnd) < currentIndex;
     final originalColor = Color(
       glyph.format.textColor ?? (textColor == 0 ? 0xFFFFFFFF : textColor),
     );
-    final color = current && enabled
+    final color = currentParagraph && enabled
         ? Color(currentCharColor)
         : read && grayReadChars
         ? Color(readCharColor)
@@ -560,6 +742,7 @@ class ReadingTextPresentation {
           ? clampReadingEmphasisScale(currentCharScale)
           : 1,
       isCurrent: current,
+      isCurrentParagraph: currentParagraph,
       isRead: read,
     );
   }
@@ -571,6 +754,15 @@ class ReadingTextPresentation {
             layout.graphemes.first.rawStart - 1,
             layout.graphemes.last.rawEnd + 1,
           ),
+    // A paragraph can span several authored <br> lines. Its early line must
+    // repaint when the cursor leaves the paragraph even though the clamped
+    // per-line cursor was already past that line's last glyph.
+    continuous || layout.graphemes.isEmpty
+        ? false
+        : layout.graphemes.first.paragraph!.containsRawIndex(currentIndex),
+    continuous || layout.graphemes.isEmpty
+        ? false
+        : layout.graphemes.first.paragraph!.rawEnd < currentIndex,
     continuous,
     enabled,
     grayReadChars,
@@ -587,10 +779,15 @@ class ReadingTextPresentation {
 /// painters across visible lines, with a hard cap independent of script length.
 class ReadingGlyphPainterCache {
   final int capacity;
+  final ReadingGlyphInkCache inkCache;
   final _painters =
       LinkedHashMap<(String, TextStyle, TextDirection), TextPainter>();
 
-  ReadingGlyphPainterCache({this.capacity = 1024}) : assert(capacity > 0);
+  ReadingGlyphPainterCache({
+    this.capacity = 1024,
+    ReadingGlyphInkCache? inkCache,
+  }) : assert(capacity > 0),
+       inkCache = inkCache ?? ReadingGlyphInkCache();
 
   TextPainter painterFor(
     String text,
@@ -619,6 +816,7 @@ class ReadingGlyphPainterCache {
   int get length => _painters.length;
 
   void dispose() {
+    inkCache.dispose();
     for (final painter in _painters.values) {
       painter.dispose();
     }
@@ -728,6 +926,15 @@ class ReadingEmphasisLine extends StatefulWidget {
   final ScrollController? scrollController;
   final double contentTop;
   final double viewportHeight;
+  final List<ReadingAnnotation> annotations;
+  final bool showAnnotations;
+  final ReadingAnnotationStyle annotationStyle;
+
+  /// Empty space already present above this authored line. It extends only
+  /// the foreground paint layer; it never changes this widget's layout size.
+  final double annotationLeadingSpace;
+  final bool handleAnnotationLabelTaps;
+  final ValueChanged<List<ReadingAnnotation>>? onAnnotationsTap;
 
   const ReadingEmphasisLine({
     super.key,
@@ -741,6 +948,12 @@ class ReadingEmphasisLine extends StatefulWidget {
     this.scrollController,
     this.contentTop = 0,
     this.viewportHeight = double.infinity,
+    this.annotations = const [],
+    this.showAnnotations = true,
+    this.annotationStyle = const ReadingAnnotationStyle(),
+    this.annotationLeadingSpace = 0,
+    this.handleAnnotationLabelTaps = true,
+    this.onAnnotationsTap,
   });
 
   @override
@@ -749,12 +962,59 @@ class ReadingEmphasisLine extends StatefulWidget {
 
 class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   late ReadingTextLayout _layout;
+  ReadingAnnotationLayout? _annotations;
   int _layoutBuildCount = 0;
+  int _annotationInkRevision = -1;
 
   @visibleForTesting
   ReadingTextLayout get debugLayout => _layout;
   @visibleForTesting
   int get debugLayoutBuildCount => _layoutBuildCount;
+  @visibleForTesting
+  ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
+
+  ReadingAnnotationDisplayStatus annotationDisplayStatus({
+    int maximumRows = 64,
+  }) => widget.showAnnotations
+      ? _annotations?.displayStatus(maximumRows: maximumRows) ??
+            const ReadingAnnotationDisplayStatus()
+      : const ReadingAnnotationDisplayStatus();
+
+  /// Reuse a mounted predecessor's immutable layout when another authored
+  /// line borrows its empty tail. During a font/viewport update the parent can
+  /// temporarily build ahead of this child; reject stale geometry then.
+  double? annotationTrailingSpaceFor({
+    required ReadingTextGeometry geometry,
+    required double width,
+    required TextDirection direction,
+  }) {
+    if (!mounted ||
+        _layout.geometry != geometry ||
+        _layout.width != width ||
+        _layout.direction != direction) {
+      return null;
+    }
+    return ReadingAnnotationLayout.trailingSpace(_layout, widget.glyphCache);
+  }
+
+  /// The scroll viewport also calls this for labels painted into the preceding
+  /// line's existing whitespace, which lies outside this render box's hit area.
+  bool openAnnotationLabelAt(Offset position) =>
+      openAnnotationsAt(position, labelsOnly: true);
+
+  List<ReadingAnnotation> annotationsAt(
+    Offset position, {
+    bool labelsOnly = false,
+  }) => widget.showAnnotations
+      ? _annotations?.notesAt(position, labelsOnly: labelsOnly) ?? const []
+      : const [];
+
+  bool openAnnotationsAt(Offset position, {bool labelsOnly = false}) {
+    final notes = annotationsAt(position, labelsOnly: labelsOnly);
+    if (notes.isEmpty) return false;
+    _showNotes(notes);
+    return true;
+  }
 
   void _createLayout() {
     _layout = ReadingTextLayout(
@@ -764,30 +1024,116 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
       direction: widget.direction,
     );
     _layoutBuildCount++;
+    _createAnnotations();
+  }
+
+  void _createAnnotations() {
+    _annotationInkRevision = widget.glyphCache.inkCache.revision;
+    _annotations?.dispose();
+    _annotations = widget.annotations.isEmpty
+        ? null
+        : ReadingAnnotationLayout(
+            textLayout: _layout,
+            annotations: widget.annotations,
+            glyphCache: widget.glyphCache,
+            leadingSpace: widget.annotationLeadingSpace,
+            style: widget.annotationStyle,
+          );
   }
 
   @override
   void initState() {
     super.initState();
+    widget.glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
     _createLayout();
+  }
+
+  void _handleAnnotationInkChanged() {
+    if (!mounted ||
+        widget.annotations.isEmpty ||
+        _annotationInkRevision == widget.glyphCache.inkCache.revision) {
+      return;
+    }
+    // Native ink completion only replaces the foreground's two-level cache.
+    // The original ReadingTextLayout remains the very same object.
+    setState(_createAnnotations);
   }
 
   @override
   void didUpdateWidget(ReadingEmphasisLine oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.glyphCache != oldWidget.glyphCache) {
+      oldWidget.glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
+      widget.glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
+    }
     if (!identical(widget.line, oldWidget.line) ||
         widget.geometry != oldWidget.geometry ||
         widget.width != oldWidget.width ||
         widget.direction != oldWidget.direction) {
       _layout.dispose();
       _createLayout();
+    } else if (!identical(widget.annotations, oldWidget.annotations) ||
+        widget.annotationLeadingSpace != oldWidget.annotationLeadingSpace ||
+        widget.annotationStyle != oldWidget.annotationStyle ||
+        widget.glyphCache != oldWidget.glyphCache) {
+      _createAnnotations();
     }
   }
 
   @override
   void dispose() {
+    widget.glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
+    _annotations?.dispose();
     _layout.dispose();
     super.dispose();
+  }
+
+  void _showNotesAt(Offset position, {bool labelsOnly = false}) {
+    if (!widget.showAnnotations) return;
+    final notes = _annotations?.notesAt(position, labelsOnly: labelsOnly);
+    if (notes != null && notes.isNotEmpty) _showNotes(notes);
+  }
+
+  void _showNotes(List<ReadingAnnotation> notes) {
+    if (widget.onAnnotationsTap case final callback?) {
+      callback(notes);
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('批注'),
+        content: SizedBox(
+          width: 480,
+          height: math.min(420, MediaQuery.sizeOf(context).height * .55),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: notes.length,
+            separatorBuilder: (_, _) => const Divider(height: 28),
+            itemBuilder: (context, index) {
+              final note = notes[index];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    note.ranges.map((range) => range.quote).join(' … '),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(note.text),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -795,24 +1141,74 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
     cursor: SystemMouseCursors.click,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
+      onTapUp: (details) {
+        final notes = widget.showAnnotations && widget.handleAnnotationLabelTaps
+            ? _annotations?.notesAt(details.localPosition, labelsOnly: true)
+            : null;
+        if (notes != null && notes.isNotEmpty) {
+          _showNotes(notes);
+          return;
+        }
         final rawIndex = _layout.rawIndexForOffset(details.localPosition);
         if (rawIndex != null) widget.onCharTap?.call(rawIndex);
       },
+      onLongPressStart: widget.showAnnotations && _annotations != null
+          ? (details) => _showNotesAt(details.localPosition)
+          : null,
+      onSecondaryTapUp: widget.showAnnotations && _annotations != null
+          ? (details) => _showNotesAt(details.localPosition)
+          : null,
       child: Semantics(
         label: widget.line.text,
         textDirection: widget.direction,
-        child: RepaintBoundary(
-          child: CustomPaint(
-            size: Size(widget.width, _layout.height),
-            painter: ReadingTextPainter(
-              layout: _layout,
-              presentation: widget.presentation,
-              glyphCache: widget.glyphCache,
-              scrollController: widget.scrollController,
-              contentTop: widget.contentTop,
-              viewportHeight: widget.viewportHeight,
-            ),
+        hint: widget.showAnnotations && _annotations != null
+            ? '长按或右键标记文字查看完整批注'
+            : null,
+        customSemanticsActions: widget.showAnnotations && _annotations != null
+            ? {
+                const CustomSemanticsAction(label: '查看本行批注'): () =>
+                    _showNotes(widget.annotations),
+              }
+            : null,
+        child: SizedBox(
+          width: widget.width,
+          height: _layout.height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              RepaintBoundary(
+                child: CustomPaint(
+                  size: Size(widget.width, _layout.height),
+                  painter: ReadingTextPainter(
+                    layout: _layout,
+                    presentation: widget.presentation,
+                    glyphCache: widget.glyphCache,
+                    scrollController: widget.scrollController,
+                    contentTop: widget.contentTop,
+                    viewportHeight: widget.viewportHeight,
+                  ),
+                ),
+              ),
+              if (widget.showAnnotations && _annotations != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: -_annotations!.leadingSpace,
+                  height: _layout.height + _annotations!.leadingSpace,
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: ReadingAnnotationPainter(
+                          layout: _annotations!,
+                          scrollController: widget.scrollController,
+                          contentTop: widget.contentTop,
+                          viewportHeight: widget.viewportHeight,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

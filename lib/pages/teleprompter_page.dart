@@ -8,6 +8,9 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
+import '../models/reading_annotation_style.dart';
+import '../services/annotation_anchors.dart';
 import '../models/app_settings.dart';
 import '../providers/article_provider.dart';
 import '../providers/connection_provider.dart';
@@ -22,6 +25,7 @@ import '../widgets/teleprompter/teleprompter_viewport.dart';
 import '../widgets/teleprompter/auto_speed_picker.dart';
 import '../widgets/teleprompter/prompt_entrance.dart';
 import '../widgets/teleprompter/teleprompter_settings_panel.dart';
+import '../widgets/settings/reading_annotation_appearance_dialog.dart';
 import 'settings_page.dart';
 
 part 'teleprompter/teleprompter_logic.dart';
@@ -55,6 +59,7 @@ class TeleprompterPage extends StatefulWidget {
 class _TeleprompterPageState extends State<TeleprompterPage>
     with WidgetsBindingObserver, TeleprompterPageLogic {
   bool _showSettings = false;
+  late List<ReadingAnnotation> _readingAnnotations;
   bool _wasRemoteClient = false;
   bool _remoteRetrying = false;
   bool _isExiting = false;
@@ -68,6 +73,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   @override
   void initState() {
     super.initState();
+    _readingAnnotations = AnnotationAnchors.validate(
+      widget.article.content,
+      widget.article.annotations,
+    );
     HardwareKeyboard.instance.addHandler(_handleGlobalShortcutKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isTextInputFocused()) return;
@@ -84,7 +93,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   bool _handleGlobalShortcutKey(KeyEvent event) {
-    if (!mounted || _isTextInputFocused()) {
+    if (event is KeyUpEvent && _isPauseShortcut(event)) {
+      _pauseShortcutPressed = false;
+    }
+    if (!mounted || !_isCurrentShortcutRoute || _isTextInputFocused()) {
       return false;
     }
 
@@ -142,7 +154,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           child: CallbackShortcuts(
             bindings: {
               const SingleActivator(LogicalKeyboardKey.escape): () {
-                if (_isTextInputFocused()) return;
+                if (!_isCurrentShortcutRoute || _isTextInputFocused()) return;
                 unawaited(_requestExitTeleprompter(context));
               },
             },
@@ -269,7 +281,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
               top: 0,
               right: 0,
               bottom: 0,
-              child: TeleprompterSettingsPanel(onClose: _closeSettingsPanel),
+              child: TeleprompterSettingsPanel(
+                onClose: _closeSettingsPanel,
+                onAnnotationAppearance: _showAnnotationAppearance,
+              ),
             ),
         ],
       ),
@@ -277,6 +292,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   KeyEventResult _handleTeleprompterKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_isCurrentShortcutRoute) return KeyEventResult.ignored;
     if (event is! KeyDownEvent &&
         event is! KeyRepeatEvent &&
         event is! KeyUpEvent) {
@@ -379,6 +395,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return false;
   }
 
+  bool get _isCurrentShortcutRoute =>
+      ModalRoute.of(context)?.isCurrent ?? false;
+
   bool _isPauseShortcut(KeyEvent event) {
     return event.logicalKey == LogicalKeyboardKey.space ||
         event.physicalKey == PhysicalKeyboardKey.space ||
@@ -386,6 +405,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   bool _handlePauseShortcutEvent(KeyEvent event) {
+    if (!_isCurrentShortcutRoute) return false;
     if (!_isPauseShortcut(event)) return false;
 
     if (event is KeyUpEvent) {
@@ -447,6 +467,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     // 进度条右侧文字大小 = 正文的 settings.progressInfoSizeRatio (默认 60%)
     final infoFontSize = settings.fontSize * settings.progressInfoSizeRatio;
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
+    final infoGap = (clampedFontSize * .4).clamp(10.0, 16.0).toDouble();
     final barHeight = _progressBarHeight(settings);
 
     // 构建信息文本（根据各项开关动态显示）
@@ -458,12 +479,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             fontFeatures: const [FontFeature.tabularFigures()],
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 速度（阅读模式且允许显示）
       if (settings.scrollMode != ScrollMode.asr &&
@@ -473,11 +494,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 百分比
       if (settings.progressShowPercentage) ...[
@@ -486,11 +507,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 当前时间
       if (settings.progressShowCurrentTime) ...[
@@ -499,7 +520,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             fontFeatures: const [FontFeature.tabularFigures()],
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
@@ -621,6 +642,42 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (_readingAnnotations.isNotEmpty)
+                Tooltip(
+                  message: settings.showAnnotations
+                      ? '隐藏批注，正文位置保持不变'
+                      : '显示朗读批注',
+                  child: TextButton.icon(
+                    key: const ValueKey('toggle-reading-annotations'),
+                    onPressed: () => context
+                        .read<SettingsProvider>()
+                        .setShowAnnotations(!settings.showAnnotations),
+                    icon: Icon(
+                      settings.showAnnotations
+                          ? Icons.comment_outlined
+                          : Icons.speaker_notes_off_outlined,
+                      size: 17,
+                    ),
+                    label: Text(settings.showAnnotations ? '批注：开' : '批注：关'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xff8bcfc9),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ),
+              if (_readingAnnotations.isNotEmpty)
+                IconButton(
+                  key: const ValueKey('playback-annotation-appearance'),
+                  onPressed: _showAnnotationAppearance,
+                  tooltip: '批注外观：字体、字号和颜色',
+                  icon: const Icon(Icons.palette_outlined, size: 20),
+                  color: AppColors.textPrimary,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
               IconButton(
                 icon: Icon(
                   teleprompter.controlsPinned
@@ -1364,6 +1421,9 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         key: textLayerKey,
         scrollController: scrollController,
         lines: teleprompter.lines,
+        annotations: _readingAnnotations,
+        annotationStyle: ReadingAnnotationStyle.fromSettings(settings),
+        showAnnotations: settings.showAnnotations,
         currentIndex: teleprompter.currentIndex,
         fontSize: settings.fontSize,
         lineHeight: settings.lineHeight,
@@ -1399,7 +1459,14 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         currentCharColor: settings.currentCharColor,
         readCharColor: settings.readCharColor,
         currentCharScale: settings.currentCharScale,
-        textColor: settings.textColor,
+        textColor: settings.textColor == 0
+            ? ThemeData.estimateBrightnessForColor(
+                        Color(settings.teleprompterBgColor),
+                      ) ==
+                      Brightness.dark
+                  ? 0xFFFFFFFF
+                  : 0xFF000000
+            : settings.textColor,
         letterSpacing: settings.letterSpacing,
         highlightCurrentChar: settings.highlightCurrentChar,
         defaultBold: settings.defaultBold,
@@ -1409,6 +1476,23 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   // ─── 阅读区域框（主体样式） ────────────────────────────
+
+  Future<void> _showAnnotationAppearance() async {
+    final provider = context.read<SettingsProvider>();
+    final next = await ReadingAnnotationAppearanceDialog.show(
+      context,
+      initialSettings: provider.mergedSettings,
+      content: widget.article.content,
+      annotations: _readingAnnotations,
+      focusRawIndex: context.read<TeleprompterProvider>().currentIndex,
+    );
+    if (!mounted || next == null) return;
+    await provider.setAnnotationAppearance(
+      fontFamily: next.annotationFontFamily,
+      fontSize: next.annotationFontSize,
+      color: next.annotationColor,
+    );
+  }
 
   /// 阅读线固定金色（与原版 fdc800 一致）
   static const Color _readingLineGold = Color(0xFFFDC800);
