@@ -11,7 +11,12 @@ import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_glyph_ink_c
 // Keep the chosen safe band stable while exercising real native note shaping.
 class _PendingInkCache extends ReadingGlyphInkCache {
   @override
-  Rect? boundsFor(String text, TextStyle style, TextDirection direction, TextPainter painter) => null;
+  Rect? boundsFor(
+    String text,
+    TextStyle style,
+    TextDirection direction,
+    TextPainter painter,
+  ) => null;
 }
 
 ({ReadingAnnotationLayout notes, ReadingAnnotation note}) _layout(String text) {
@@ -22,7 +27,9 @@ class _PendingInkCache extends ReadingGlyphInkCache {
     width: 1100,
     direction: TextDirection.ltr,
   );
-  final top = body.maximumGlyphBounds(body.placementAt(0), cache, resolveInk: false).top;
+  final top = body
+      .maximumGlyphBounds(body.placementAt(0), cache, resolveInk: false)
+      .top;
   final leading = 26 - top + 3;
   expect(leading, greaterThanOrEqualTo(0));
   final note = ReadingAnnotation(
@@ -60,11 +67,17 @@ void main() {
     expect(label.painter.text!.toPlainText(), text);
     expect(label.rect.top, greaterThanOrEqualTo(row.safeBand.top - .01));
     expect(label.rect.bottom, lessThanOrEqualTo(row.safeBand.bottom + .01));
-    expect(row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)), isFalse);
+    expect(
+      row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)),
+      isFalse,
+    );
     expect(label.tail, label.rect.bottomCenter);
     expect(label.tip, label.anchor.frame.topCenter);
     final vector = label.tip - label.tail;
-    expect(math.atan2(vector.dy.abs(), vector.dx.abs()) * 180 / math.pi, closeTo(17.5, .001));
+    expect(
+      math.atan2(vector.dy.abs(), vector.dx.abs()) * 180 / math.pi,
+      closeTo(17.5, .001),
+    );
     expect(value.notes.notesAt(label.rect.center).single.text, text);
   });
 
@@ -79,6 +92,9 @@ void main() {
     expect(label.painter.computeLineMetrics().length, inInclusiveRange(1, 3));
     expect(value.note.text, text);
     expect(value.notes.notesAt(label.rect.center).single.text, text);
-    expect(row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)), isFalse);
+    expect(
+      row.bodyBounds.any((rect) => rect.overlaps(label.occupiedBounds)),
+      isFalse,
+    );
   });
 }

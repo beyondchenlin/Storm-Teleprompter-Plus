@@ -447,7 +447,8 @@ class ReadingAnnotationLayout {
           availableRise,
           math.max(minimumRise, fontSize * .75),
         );
-        final run = rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);
+        final run =
+            rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);
         // Only the right boundary mirrors a leader. A collision does not send
         // the reader hunting for a note on an unrelated side of the word.
         final mirrored = tip.dx + run + painter.width / 2 > band.right;
@@ -458,7 +459,10 @@ class ReadingAnnotationLayout {
           painter.width,
           painter.height,
         );
-        final leaderBounds = Rect.fromPoints(rect.bottomCenter, tip).inflate(.75);
+        final leaderBounds = Rect.fromPoints(
+          rect.bottomCenter,
+          tip,
+        ).inflate(.75);
         final occupiedBounds = rect
             .expandToInclude(leaderBounds)
             .inflate(_clearance);

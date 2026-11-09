@@ -59,10 +59,8 @@ ReadingAnnotation _note(int start, String quote) => ReadingAnnotation(
   ],
 );
 
-Future<void> _settleInk(
-  WidgetTester tester,
-  ReadingGlyphPainterCache cache,
-) => settleReadingInk(tester, cache.inkCache);
+Future<void> _settleInk(WidgetTester tester, ReadingGlyphPainterCache cache) =>
+    settleReadingInk(tester, cache.inkCache);
 
 Future<List<int>> _bodyPixels(
   WidgetTester tester,

@@ -16,7 +16,8 @@ Future<void> settleReadingInk(
       () => Future<void>.delayed(const Duration(milliseconds: 5)),
     );
     await tester.pump();
-    final idle = cache.debugPendingCount == 0 &&
+    final idle =
+        cache.debugPendingCount == 0 &&
         cache.debugActiveCount == 0 &&
         cache.debugLivePictureCount == 0 &&
         cache.debugLiveImageCount == 0;
