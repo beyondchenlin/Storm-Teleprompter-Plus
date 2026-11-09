@@ -59,10 +59,12 @@ Future<EditorPageState> _mount(
 
 Future<ReadingEmphasisLineState> _settlePreview(WidgetTester tester) async {
   final state = tester.state<ReadingEmphasisLineState>(
-    find.descendant(
-      of: find.byType(ReadingAnnotationPreview).first,
-      matching: find.byType(ReadingEmphasisLine),
-    ).first,
+    find
+        .descendant(
+          of: find.byType(ReadingAnnotationPreview).first,
+          matching: find.byType(ReadingEmphasisLine),
+        )
+        .first,
   );
   await settleReadingInk(tester, state.widget.glyphCache.inkCache);
   return state;
@@ -146,13 +148,17 @@ void main() {
     ];
     expect(labels, isNotEmpty);
     expect(
-      labels.any((label) => label.anchor.notes.any((note) => note.text == '重读')),
+      labels.any(
+        (label) => label.anchor.notes.any((note) => note.text == '重读'),
+      ),
       isTrue,
     );
     await editor.save(force: true);
     _expectNoFixedSize(articles.articles.single.content);
     expect(
-      articles.articles.single.annotations.map((note) => note.toJson()).toList(),
+      articles.articles.single.annotations
+          .map((note) => note.toJson())
+          .toList(),
       notes,
     );
     expect(tester.takeException(), isNull);
@@ -209,19 +215,13 @@ void main() {
   testWidgets('使用提词字号是独立可撤销操作，撤销与重做均保留正文和批注范围', (tester) async {
     final editor = await _mount(
       tester,
-      _article(
-        '<p><span style="font-size: 27px">甲不是乙</span></p>',
-        [_note(1, '不是')],
-      ),
+      _article('<p><span style="font-size: 27px">甲不是乙</span></p>', [
+        _note(1, '不是'),
+      ]),
     );
     final controller = editor.quillController;
     controller.document.history.lastRecorded = 0;
-    controller.replaceText(
-      0,
-      0,
-      '前',
-      const TextSelection.collapsed(offset: 1),
-    );
+    controller.replaceText(0, 0, '前', const TextSelection.collapsed(offset: 1));
     await tester.pump();
     final delta = controller.document.toDelta().toJson();
     final notes = _notes(editor);

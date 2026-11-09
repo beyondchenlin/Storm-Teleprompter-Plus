@@ -127,7 +127,9 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.4,
-                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
                       ),
                     ),
                   ),
@@ -157,7 +159,10 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
     },
   );
 
-  Widget _annotationWorkspaceContent(Widget editor, BoxConstraints constraints) {
+  Widget _annotationWorkspaceContent(
+    Widget editor,
+    BoxConstraints constraints,
+  ) {
     if (_annotations.isEmpty || !showAnnotationPreview) return editor;
     if (constraints.maxWidth >= 1040 && constraints.maxHeight >= 300) {
       return Row(
