@@ -44,6 +44,14 @@ class _ArticlePreferences implements AppPreferences {
     writes++;
     return true;
   }
+
+  @override
+  Future<bool> setStrings(Map<String, String> entries) async {
+    if (fail) return false;
+    values.addAll(entries);
+    writes++;
+    return true;
+  }
 }
 
 void main() {
@@ -172,6 +180,78 @@ void main() {
       expect(loaded.fontSize, 76);
       expect(loaded.asrModelId, 'installed-model');
       expect(backend.preferences.maxActiveWrites, 1);
+    });
+
+    test('默认外观写盘失败抛错并保留选择，重载后可原样重试', () async {
+      backend.preferences.returnFalse = true;
+      await expectLater(
+        provider.setDefaultAnnotationAppearance(
+          fontFamily: '宋体', fontSize: 24, color: 0xFF88AAFF,
+        ),
+        throwsStateError,
+      );
+      expect(provider.settings.annotationFontFamily, '宋体');
+      expect(provider.settings.annotationFontSize, 24);
+      expect(provider.settings.annotationColor, 0xFF88AAFF);
+      expect((await backend.service.loadSettings()).toAnnotationAppearanceMap(), _custom.toAnnotationAppearanceMap());
+      await provider.loadSettings();
+      expect(provider.settings.annotationFontFamily, '宋体');
+      expect(provider.settings.annotationFontSize, 24);
+      expect(provider.settings.annotationColor, 0xFF88AAFF);
+      backend.preferences.returnFalse = false;
+      await provider.setDefaultAnnotationAppearance(
+        fontFamily: provider.settings.annotationFontFamily,
+        fontSize: provider.settings.annotationFontSize,
+        color: provider.settings.annotationColor,
+      );
+      expect((await backend.service.loadSettings()).toAnnotationAppearanceMap(), provider.settings.toAnnotationAppearanceMap());
+      // 成功确认清理了旧意图，之后读取服务端的新值不再被旧选择覆盖。
+      await backend.service.saveSettings(_custom.copyWith(annotationFontSize: 12));
+      await provider.loadSettings();
+      expect(provider.settings.annotationFontSize, 12);
+    });
+
+    test('断线应用默认外观明确失败，重连保留选择同时读回其它新设置', () async {
+      backend.connection.disconnectForRetry();
+      await expectLater(provider.setDefaultAnnotationAppearance(color: 0xFF88AAFF), throwsStateError);
+      expect(provider.settings.annotationColor, 0xFF88AAFF);
+      await backend.service.saveSettings(_custom.copyWith(fontSize: 94));
+      backend.connection.reconnectTo(backend.server);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await provider.loadSettings();
+      expect(provider.settings.annotationColor, 0xFF88AAFF);
+      expect(provider.settings.fontSize, 94);
+      expect((await backend.service.loadSettings()).annotationColor, _custom.annotationColor);
+      await provider.setDefaultAnnotationAppearance(color: provider.settings.annotationColor);
+      expect((await backend.service.loadSettings()).annotationColor, 0xFF88AAFF);
+    });
+
+    test('较旧保存的迟到确认不会清理较新但失败的外观选择', () async {
+      backend.server.heldResponseTypes.add(WsMessageType.settingsSaveResponse);
+      final first = provider.setDefaultAnnotationAppearance(fontSize: 16);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      backend.preferences.returnFalse = true;
+      final second = provider.setDefaultAnnotationAppearance(color: 0xFF88AAFF);
+      final failed = expectLater(second, throwsStateError);
+      backend.server.releaseResponses(WsMessageType.settingsSaveResponse);
+      await first;
+      await failed;
+      expect((await backend.service.loadSettings()).annotationFontSize, 16);
+      expect((await backend.service.loadSettings()).annotationColor, _custom.annotationColor);
+      await provider.loadSettings();
+      expect(provider.settings.annotationFontSize, 16);
+      expect(provider.settings.annotationColor, 0xFF88AAFF);
+    });
+
+    test('明确恢复全部默认值后不复活此前失败的批注选择', () async {
+      backend.preferences.returnFalse = true;
+      await expectLater(provider.setDefaultAnnotationAppearance(color: 0xFF88AAFF), throwsStateError);
+      backend.preferences.returnFalse = false;
+      await provider.resetAllSettings();
+      await provider.loadSettings();
+      expect(provider.settings.toAnnotationAppearanceMap(), const AppSettings().toAnnotationAppearanceMap());
     });
 
     test('本稿件外观与默认值隔离，恢复默认一次同步三项', () async {
