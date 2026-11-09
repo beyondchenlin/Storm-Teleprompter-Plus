@@ -386,6 +386,9 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     var importedFolderCount = 0;
     final batch = await _importService.importPaths(paths);
     final errors = [...batch.failures];
+    final warnings = <String>[];
+    var importedNotes = 0;
+    var pendingNotes = 0;
     final folderIds = <String, String>{};
     final folders = [...batch.folders]
       ..sort((a, b) => a.relativePath.length.compareTo(b.relativePath.length));
@@ -433,12 +436,16 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
         final article = await articleProvider.createArticle(
           title: file.article.title.isEmpty ? '未命名稿件' : file.article.title,
           content: file.article.content,
+          annotations: file.article.annotations,
           folderId: folderId,
         );
         if (article == null) {
           errors.add('${_fileName(file.sourcePath)}: 创建失败');
         } else {
           importedCount++;
+          importedNotes += article.annotations.length;
+          pendingNotes += article.annotations.where((note) => !note.isAnchored).length;
+          warnings.addAll(file.article.warnings.map((message) => '${file.article.title}：$message'));
         }
       }
       completedSteps++;
@@ -455,6 +462,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     if (importedCount > 0 && errors.isEmpty) {
       _showImportSnackBar(
         '已导入 $importedCount 篇稿件、$importedFolderCount 个文件夹'
+        '${importedNotes == 0 ? '' : '，$importedNotes 条批注'}'
         '${batch.skippedCount == 0 ? '' : '，跳过 ${batch.skippedCount} 个其他文件'}',
       );
     } else if (importedCount > 0 || importedFolderCount > 0) {
@@ -465,7 +473,34 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
     } else if (errors.isNotEmpty) {
       _showImportSnackBar(errors.take(2).join('\n'));
     } else {
-      _showImportSnackBar('没有可导入的 txt/docx 文件');
+      _showImportSnackBar('没有可导入的文本、文字文档或便携文档');
+    }
+    if (warnings.isNotEmpty || pendingNotes > 0 || errors.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('导入结果'),
+          scrollable: true,
+          content: SizedBox(
+            width: 540,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('已导入 $importedCount 篇稿件、$importedNotes 条批注。'),
+                if (pendingNotes > 0) Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text('$pendingNotes 条批注没有可确认的字词范围。打开稿件的“批注管理”，选中原文后绑定；备注内容已保留。'),
+                ),
+                for (final message in [...warnings, ...errors]) Padding(
+                  padding: const EdgeInsets.only(top: 8), child: Text(message),
+                ),
+              ],
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
+        ),
+      );
     }
   }
 
@@ -500,7 +535,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   Future<void> _importFilesFromMenu() async {
     final files = await openFiles(
       acceptedTypeGroups: const [
-        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx', 'html', 'htm']),
+        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx', 'pdf', 'html', 'htm']),
       ],
     );
     if (files.isEmpty) return;
@@ -1155,6 +1190,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
           final copied = await articleProvider.createArticle(
             title: '${item.article!.title} - 副本',
             content: item.article!.content,
+            annotations: item.article!.annotations,
             folderId: _currentFolderId,
           );
           if (copied != null && item.article!.teleprompterSettings != null) {

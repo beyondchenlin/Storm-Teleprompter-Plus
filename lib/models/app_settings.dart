@@ -60,6 +60,9 @@ class AppSettings {
   /// 是否启用镜像翻转（用于提词器分光镜）
   final bool mirrorMode;
 
+  /// Paint-only coaching notes; saved per manuscript and synced with the session.
+  final bool showAnnotations;
+
   /// 远程接收端的全屏启动偏好；本地提词始终以普通窗口进入。
   final bool fullScreenMode;
 
@@ -174,6 +177,7 @@ class AppSettings {
     this.autoScrollMode = AutoScrollMode.line,
     this.pixelsPerSecond = 20,
     this.mirrorMode = false,
+    this.showAnnotations = true,
     this.fullScreenMode = false,
     this.autoHideUI = true,
     this.autoHideDelaySeconds = 3,
@@ -239,6 +243,7 @@ class AppSettings {
       ),
       pixelsPerSecond: (json['pixelsPerSecond'] as num?)?.toDouble() ?? 20,
       mirrorMode: json['mirrorMode'] as bool? ?? false,
+      showAnnotations: json['showAnnotations'] as bool? ?? true,
       fullScreenMode: json['fullScreenMode'] as bool? ?? false,
       autoHideUI: json['autoHideUI'] as bool? ?? true,
       autoHideDelaySeconds: json['autoHideDelaySeconds'] as int? ?? 3,
@@ -305,6 +310,7 @@ class AppSettings {
       'autoScrollMode': autoScrollMode.name,
       'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
+      'showAnnotations': showAnnotations,
       'fullScreenMode': fullScreenMode,
       'autoHideUI': autoHideUI,
       'autoHideDelaySeconds': autoHideDelaySeconds,
@@ -353,6 +359,7 @@ class AppSettings {
     AutoScrollMode? autoScrollMode,
     double? pixelsPerSecond,
     bool? mirrorMode,
+    bool? showAnnotations,
     bool? fullScreenMode,
     bool? autoHideUI,
     int? autoHideDelaySeconds,
@@ -401,6 +408,7 @@ class AppSettings {
       autoScrollMode: autoScrollMode ?? this.autoScrollMode,
       pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
       mirrorMode: mirrorMode ?? this.mirrorMode,
+      showAnnotations: showAnnotations ?? this.showAnnotations,
       fullScreenMode: fullScreenMode ?? this.fullScreenMode,
       autoHideUI: autoHideUI ?? this.autoHideUI,
       autoHideDelaySeconds: autoHideDelaySeconds ?? this.autoHideDelaySeconds,
@@ -479,6 +487,7 @@ class AppSettings {
       pixelsPerSecond:
           (overrides['pixelsPerSecond'] as num?)?.toDouble() ?? pixelsPerSecond,
       mirrorMode: overrides['mirrorMode'] as bool? ?? mirrorMode,
+      showAnnotations: overrides['showAnnotations'] as bool? ?? showAnnotations,
       fullScreenMode: overrides['fullScreenMode'] as bool? ?? fullScreenMode,
       autoHideUI: overrides['autoHideUI'] as bool? ?? autoHideUI,
       autoHideDelaySeconds:
@@ -548,6 +557,7 @@ class AppSettings {
       'autoScrollMode': autoScrollMode.name,
       'pixelsPerSecond': pixelsPerSecond,
       'mirrorMode': mirrorMode,
+      'showAnnotations': showAnnotations,
       'paddingX': paddingX,
       'readingLineOffset': readingLineOffset,
       'highlightCurrentChar': highlightCurrentChar,

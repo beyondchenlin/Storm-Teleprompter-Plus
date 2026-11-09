@@ -12,6 +12,8 @@ mixin EditorLogic on State<EditorPage> {
   late ArticleProvider _articleProvider;
 
   Article? _savedArticle;
+  List<ReadingAnnotation> _annotations = const [];
+  List<ReadingAnnotation> get annotations => List.unmodifiable(_annotations);
   String? _saveFolderId;
   bool _discardOnDispose = false;
 
@@ -47,6 +49,9 @@ mixin EditorLogic on State<EditorPage> {
   void initState() {
     super.initState();
     _savedArticle = widget.article;
+    _annotations = AnnotationAnchors.validate(
+      widget.article?.content ?? '', widget.article?.annotations ?? const [],
+    );
     _saveFolderId = widget.initialFolderId;
     titleController = TextEditingController(text: widget.article?.title ?? '');
     contentController = TextEditingController(
@@ -114,6 +119,7 @@ mixin EditorLogic on State<EditorPage> {
       return;
     }
 
+    _annotations = AnnotationAnchors.remap(contentController.text, html, _annotations);
     _syncingEditorContent = true;
     contentController.value = TextEditingValue(
       text: html,
@@ -184,6 +190,7 @@ mixin EditorLogic on State<EditorPage> {
           savedArticle = await _articleProvider.createArticle(
             title: title,
             content: draft.content,
+            annotations: draft.annotations,
             folderId: _saveFolderId,
           );
         } else {
@@ -191,6 +198,7 @@ mixin EditorLogic on State<EditorPage> {
             article.id,
             title: title,
             content: draft.content,
+            annotations: draft.annotations,
           );
         }
 
@@ -224,6 +232,7 @@ mixin EditorLogic on State<EditorPage> {
       content: contentController.text.trim(),
       visibleCharacterCount: TextParser.visibleCharacterCount(plainText),
       revision: _editRevision,
+      annotations: AnnotationAnchors.validate(contentController.text, _annotations),
     );
   }
 
@@ -251,6 +260,7 @@ mixin EditorLogic on State<EditorPage> {
             id: _savedArticle?.id ?? 'quick-${identityHashCode(this)}',
             title: _effectiveTitle(draft),
             content: draft.content,
+            annotations: draft.annotations,
             createdAt: now,
             updatedAt: now,
             teleprompterSettings: _savedArticle?.teleprompterSettings,
@@ -437,6 +447,7 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   void _replaceEditorHtml(String html) {
+    _annotations = AnnotationAnchors.remap(contentController.text, html, _annotations);
     _syncingEditorContent = true;
     quillController.document = quill.Document.fromDelta(_contentToDelta(html));
     contentController.value = TextEditingValue(
@@ -812,6 +823,7 @@ class _EditorDraft {
     required this.content,
     required this.visibleCharacterCount,
     required this.revision,
+    this.annotations = const [],
   });
 
   final String title;
@@ -819,4 +831,5 @@ class _EditorDraft {
   final String content;
   final int visibleCharacterCount;
   final int revision;
+  final List<ReadingAnnotation> annotations;
 }

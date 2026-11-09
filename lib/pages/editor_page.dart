@@ -13,6 +13,8 @@ import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart
 import 'package:provider/provider.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
+import '../services/annotation_anchors.dart';
 import '../providers/article_provider.dart';
 import '../widgets/common/folder_picker_dialog.dart';
 import '../providers/connection_provider.dart';
@@ -33,6 +35,7 @@ import 'teleprompter_page.dart';
 part 'editor/editor_logic.dart';
 part 'editor/editor_quick_mode.dart';
 part 'editor/editor_chrome.dart';
+part 'editor/editor_annotations.dart';
 
 /// 富文本稿件编辑器，快速模式允许仅在内存中保留草稿。
 class EditorPage extends StatefulWidget {
@@ -62,7 +65,7 @@ class EditorPage extends StatefulWidget {
 
 /// 暴露离开确认供稿件管理和系统退出入口复用。
 class EditorPageState extends State<EditorPage>
-    with EditorLogic, EditorQuickMode, EditorChrome {
+    with EditorLogic, EditorQuickMode, EditorChrome, EditorAnnotations {
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -173,6 +176,13 @@ class EditorPageState extends State<EditorPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        _buildFormatButton(Icons.add_comment_outlined, '给所选字词添加批注', addAnnotation),
+        _buildFormatButton(
+          Icons.comment_outlined,
+          '批注管理（${annotations.length}）',
+          manageAnnotations,
+          selected: annotations.isNotEmpty,
+        ),
         _buildFormatButton(Icons.vertical_align_top, '删除空行', removeEmptyLines),
         _buildFormatButton(
           Icons.format_indent_decrease,

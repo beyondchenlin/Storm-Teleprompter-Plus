@@ -36,7 +36,7 @@ void main() {
         of: toolbar,
         matching: find.byType(IconButton),
       );
-      expect(buttons, findsNWidgets(15));
+      expect(buttons, findsNWidgets(17));
       expect(tester.getSize(toolbar).width, width - 25);
       expect(
         tester.getTopLeft(buttons.first).dx,

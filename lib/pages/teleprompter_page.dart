@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
+import '../services/annotation_anchors.dart';
 import '../models/app_settings.dart';
 import '../providers/article_provider.dart';
 import '../providers/connection_provider.dart';
@@ -55,6 +57,7 @@ class TeleprompterPage extends StatefulWidget {
 class _TeleprompterPageState extends State<TeleprompterPage>
     with WidgetsBindingObserver, TeleprompterPageLogic {
   bool _showSettings = false;
+  late List<ReadingAnnotation> _readingAnnotations;
   bool _wasRemoteClient = false;
   bool _remoteRetrying = false;
   bool _isExiting = false;
@@ -68,6 +71,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   @override
   void initState() {
     super.initState();
+    _readingAnnotations = AnnotationAnchors.validate(widget.article.content, widget.article.annotations);
     HardwareKeyboard.instance.addHandler(_handleGlobalShortcutKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isTextInputFocused()) return;
@@ -621,6 +625,22 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (_readingAnnotations.isNotEmpty)
+                Tooltip(
+                  message: settings.showAnnotations ? '隐藏批注，正文位置保持不变' : '显示朗读批注',
+                  child: TextButton.icon(
+                    key: const ValueKey('toggle-reading-annotations'),
+                    onPressed: () => context.read<SettingsProvider>()
+                        .setShowAnnotations(!settings.showAnnotations),
+                    icon: Icon(settings.showAnnotations
+                        ? Icons.comment_outlined : Icons.speaker_notes_off_outlined, size: 17),
+                    label: Text(settings.showAnnotations ? '批注：开' : '批注：关'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xff8bcfc9),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ),
               IconButton(
                 icon: Icon(
                   teleprompter.controlsPinned
@@ -1364,6 +1384,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         key: textLayerKey,
         scrollController: scrollController,
         lines: teleprompter.lines,
+        annotations: _readingAnnotations,
+        showAnnotations: settings.showAnnotations,
         currentIndex: teleprompter.currentIndex,
         fontSize: settings.fontSize,
         lineHeight: settings.lineHeight,

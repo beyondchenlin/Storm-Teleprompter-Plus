@@ -5,6 +5,7 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:storm_teleprompter_plus/models/article.dart';
+import 'package:storm_teleprompter_plus/models/reading_annotation.dart';
 import 'package:storm_teleprompter_plus/pages/editor_page.dart';
 import 'package:storm_teleprompter_plus/providers/article_provider.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
@@ -15,7 +16,8 @@ class _DelayedArticleProvider extends ArticleProvider {
   final completer = Completer<Article?>();
 
   @override
-  Future<Article?> updateArticle(String id, {String? title, String? content}) =>
+  Future<Article?> updateArticle(String id, {List<ReadingAnnotation>? annotations,
+    String? title, String? content}) =>
       completer.future;
 }
 

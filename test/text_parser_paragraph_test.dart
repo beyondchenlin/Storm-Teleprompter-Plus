@@ -140,8 +140,8 @@ void main() {
     _expectContinuousIndices(lines, '甲乙丙丁戊己庚');
   });
 
-  test('字符簇和现有实体文本的原始码元序列保持不变', () {
-    const expected = '甲👩🏽‍💻e\u0301&amp;乙';
+  test('字符簇完整保留，实体按实际显示字符计数', () {
+    const expected = '甲👩🏽‍💻e\u0301&乙';
     final lines = TextParser.parse('<p>甲👩🏽‍💻e\u0301&amp;</p><p>乙</p>');
     _expectContinuousIndices(lines, expected);
     expect(lines.first.paragraph!.rawEnd, expected.indexOf('乙') - 1);

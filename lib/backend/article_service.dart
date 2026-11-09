@@ -1,5 +1,7 @@
 import 'dart:convert';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
+import '../services/annotation_anchors.dart';
 import '../models/folder.dart';
 import '../services/app_preferences.dart';
 import '../utils/constants.dart';
@@ -138,6 +140,7 @@ class ArticleService {
     final article = await createArticle(
       title: title,
       content: content,
+      annotations: ReadingAnnotation.listFromJson(data['annotations']),
       folderId: folderId,
     );
     server.respond(
@@ -176,6 +179,9 @@ class ArticleService {
       id,
       title: data['title'] as String?,
       content: data['content'] as String?,
+      annotations: data.containsKey('annotations')
+          ? ReadingAnnotation.listFromJson(data['annotations'])
+          : null,
       teleprompterSettings: data['teleprompterSettings'] == null
           ? null
           : Map<String, dynamic>.from(data['teleprompterSettings'] as Map),
@@ -299,6 +305,7 @@ class ArticleService {
       final created = await createArticle(
         title: article.title,
         content: article.content,
+        annotations: article.annotations,
       );
       server.respond(
         request.clientId,
@@ -588,14 +595,17 @@ class ArticleService {
   Future<Article> createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
     String? folderId,
   }) => _mutate(
-    () => _createArticle(title: title, content: content, folderId: folderId),
+    () => _createArticle(title: title, content: content,
+        annotations: annotations, folderId: folderId),
   );
 
   Future<Article> _createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
     String? folderId,
   }) async {
     final now = DateTime.now();
@@ -604,6 +614,7 @@ class ArticleService {
       title: title,
       content: content,
       createdAt: now,
+      annotations: AnnotationAnchors.validate(content, annotations),
       updatedAt: now,
       folderId: folderId,
     );
@@ -619,12 +630,14 @@ class ArticleService {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
     Map<String, dynamic>? teleprompterSettings,
   }) => _mutate(
     () => _updateArticle(
       id,
       title: title,
       content: content,
+      annotations: annotations,
       teleprompterSettings: teleprompterSettings,
     ),
   );
@@ -633,15 +646,24 @@ class ArticleService {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
     Map<String, dynamic>? teleprompterSettings,
   }) async {
     final articles = _readArticles();
     final index = articles.indexWhere((a) => a.id == id);
     if (index == -1) return null;
 
-    final updated = articles[index].copyWith(
+    final previous = articles[index];
+    final nextContent = content ?? previous.content;
+    final nextAnnotations = annotations != null
+        ? AnnotationAnchors.validate(nextContent, annotations)
+        : content == null
+            ? previous.annotations
+            : AnnotationAnchors.remap(previous.content, nextContent, previous.annotations);
+    final updated = previous.copyWith(
       title: title,
       content: content,
+      annotations: nextAnnotations,
       teleprompterSettings: teleprompterSettings,
       updatedAt: DateTime.now(),
     );
@@ -828,6 +850,7 @@ class ArticleService {
             id: _generateId(),
             title: article.title,
             content: article.content,
+            annotations: article.annotations,
             createdAt: now,
             updatedAt: now,
             sortOrder: article.sortOrder,

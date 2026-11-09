@@ -4,12 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import '../../models/app_settings.dart';
+import '../../models/reading_annotation.dart';
 import '../../models/script_character.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/constants.dart';
 import 'continuous_scroll_driver.dart';
 import 'measured_line_delegate.dart';
 import 'reading_emphasis_text.dart';
+import 'reading_annotation_layer.dart';
 import 'reading_area_frame.dart';
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
@@ -53,6 +55,8 @@ class TeleprompterTextLayer extends StatefulWidget {
   final int currentCharColor;
   final int readCharColor;
   final double currentCharScale;
+  final List<ReadingAnnotation> annotations;
+  final bool showAnnotations;
 
   const TeleprompterTextLayer({
     super.key,
@@ -89,6 +93,8 @@ class TeleprompterTextLayer extends StatefulWidget {
     this.currentCharColor = AppSettings.defaultCurrentCharColor,
     this.readCharColor = AppSettings.defaultReadCharColor,
     this.currentCharScale = AppSettings.defaultCurrentCharScale,
+    this.annotations = const [],
+    this.showAnnotations = true,
   });
 
   @override
@@ -158,6 +164,10 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   final List<double> _lineTops = <double>[];
   double _contentHeight = 0;
   final ReadingGlyphPainterCache _glyphCache = ReadingGlyphPainterCache();
+  List<ScriptLine>? _indexedAnnotationLines;
+  List<ReadingAnnotation>? _indexedAnnotations;
+  List<List<ReadingAnnotation>> _lineAnnotations = const [];
+  final Map<int, double> _annotationLeadingSpaces = {};
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
   List<ScriptLine>? _intrinsicWidthLines;
@@ -586,6 +596,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     _metricsBuildCount++;
     _lineHeights.clear();
     _lineTops.clear();
+    _annotationLeadingSpaces.clear();
     _maximumRowHeight = 0;
 
     var cursor = 0.0;
@@ -899,6 +910,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   @override
   Widget build(BuildContext context) {
+    _ensureAnnotationIndex();
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -1063,7 +1075,77 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         contentTop:
             _topPad(viewportHeight) + _lineTops[index] + _lineVerticalPadding,
         viewportHeight: viewportHeight,
+        annotations: _lineAnnotations[index],
+        showAnnotations: widget.showAnnotations,
+        annotationLeadingSpace: _lineAnnotations[index].isEmpty
+            ? 0
+            : _annotationLeadingSpace(index, textWidth, viewportHeight),
       ),
     );
+  }
+
+  /// Resolve note intervals to authored lines once. A cursor or visibility
+  /// update must not scan all notes for every visible line, or dirty metrics.
+  void _ensureAnnotationIndex() {
+    if (identical(_indexedAnnotationLines, widget.lines) &&
+        identical(_indexedAnnotations, widget.annotations)) return;
+    _indexedAnnotationLines = widget.lines;
+    _indexedAnnotations = widget.annotations;
+    final nonEmpty = <int>[
+      for (var i = 0; i < widget.lines.length; i++)
+        if (widget.lines[i].characters.isNotEmpty) i,
+    ];
+    final notes = List.generate(widget.lines.length, (_) => <ReadingAnnotation>{});
+    for (final note in widget.annotations) {
+      if (!note.isAnchored) continue;
+      for (final range in note.ranges) {
+        if (range.start >= range.end) continue;
+        var low = 0;
+        var high = nonEmpty.length;
+        while (low < high) {
+          final middle = (low + high) >> 1;
+          final last = widget.lines[nonEmpty[middle]].characters.last;
+          if (last.rawIndex + last.char.length <= range.start) {
+            low = middle + 1;
+          } else {
+            high = middle;
+          }
+        }
+        for (var i = low; i < nonEmpty.length; i++) {
+          final index = nonEmpty[i];
+          if (widget.lines[index].characters.first.rawIndex >= range.end) break;
+          notes[index].add(note);
+        }
+      }
+    }
+    _lineAnnotations = [
+      for (final lineNotes in notes)
+        lineNotes.isEmpty
+            ? const <ReadingAnnotation>[]
+            : List<ReadingAnnotation>.unmodifiable(lineNotes),
+    ];
+  }
+
+  double _annotationLeadingSpace(
+    int index,
+    double textWidth,
+    double viewportHeight,
+  ) {
+    // The first line borrows from the existing scroll padding. Recompute it
+    // after viewport/reading-line changes; no new padding is ever introduced.
+    final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;
+    if (index == 0) {
+      return math.min(cap, math.max(0, _topPad(viewportHeight) + _lineVerticalPadding));
+    }
+    return _annotationLeadingSpaces.putIfAbsent(index, () {
+      final previous = widget.lines[index - 1];
+      final blank = previous.characters.isEmpty
+          ? _textGeometry.emptyHeight
+          : ReadingAnnotationLayout.trailingSpace(
+              _layoutForLine(previous, textWidth, Directionality.of(context)),
+              _glyphCache,
+            );
+      return math.min(cap, blank + _lineVerticalPadding * 2);
+    });
   }
 }

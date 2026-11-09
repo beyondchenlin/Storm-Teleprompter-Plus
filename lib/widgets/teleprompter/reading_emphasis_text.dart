@@ -5,7 +5,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../models/app_settings.dart';
+import '../../models/reading_annotation.dart';
 import '../../models/script_character.dart';
+import 'reading_annotation_layer.dart';
 
 /// Layout reserves the largest supported emphasis, even when emphasis is off.
 /// Changing a cursor, a colour or a scale is consequently a paint-only change.
@@ -499,6 +501,33 @@ class ReadingTextLayout {
     }
   }
 
+  /// A conservative font envelope at the largest permitted emphasis. Leading
+  /// from the user's line-height is deliberately excluded: only genuinely
+  /// empty space around this envelope is available for reading annotations.
+  /// The existing cell already includes italic and horizontal ink reserves.
+  Rect maximumGlyphBounds(
+    ReadingGlyphPlacement placement,
+    ReadingGlyphPainterCache cache,
+  ) {
+    final painter = cache.painterFor(
+      placement.grapheme.text,
+      geometry.styleFor(placement.grapheme.format, reserve: true).copyWith(
+        height: ui.kTextHeightNone,
+        letterSpacing: 0,
+      ),
+      direction,
+    );
+    final baseline = painter.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    return Rect.fromLTRB(
+      placement.cell.left,
+      placement.row.baseline - baseline,
+      placement.cell.right,
+      placement.row.baseline + painter.height - baseline,
+    );
+  }
+
   void dispose() => _painter.dispose();
 }
 
@@ -764,6 +793,12 @@ class ReadingEmphasisLine extends StatefulWidget {
   final ScrollController? scrollController;
   final double contentTop;
   final double viewportHeight;
+  final List<ReadingAnnotation> annotations;
+  final bool showAnnotations;
+
+  /// Empty space already present above this authored line. It extends only
+  /// the foreground paint layer; it never changes this widget's layout size.
+  final double annotationLeadingSpace;
 
   const ReadingEmphasisLine({
     super.key,
@@ -777,6 +812,9 @@ class ReadingEmphasisLine extends StatefulWidget {
     this.scrollController,
     this.contentTop = 0,
     this.viewportHeight = double.infinity,
+    this.annotations = const [],
+    this.showAnnotations = true,
+    this.annotationLeadingSpace = 0,
   });
 
   @override
@@ -785,12 +823,15 @@ class ReadingEmphasisLine extends StatefulWidget {
 
 class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   late ReadingTextLayout _layout;
+  ReadingAnnotationLayout? _annotations;
   int _layoutBuildCount = 0;
 
   @visibleForTesting
   ReadingTextLayout get debugLayout => _layout;
   @visibleForTesting
   int get debugLayoutBuildCount => _layoutBuildCount;
+  @visibleForTesting
+  ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
 
   void _createLayout() {
     _layout = ReadingTextLayout(
@@ -800,6 +841,19 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
       direction: widget.direction,
     );
     _layoutBuildCount++;
+    _createAnnotations();
+  }
+
+  void _createAnnotations() {
+    _annotations?.dispose();
+    _annotations = widget.annotations.isEmpty
+        ? null
+        : ReadingAnnotationLayout(
+            textLayout: _layout,
+            annotations: widget.annotations,
+            glyphCache: widget.glyphCache,
+            leadingSpace: widget.annotationLeadingSpace,
+          );
   }
 
   @override
@@ -817,13 +871,62 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
         widget.direction != oldWidget.direction) {
       _layout.dispose();
       _createLayout();
+    } else if (!identical(widget.annotations, oldWidget.annotations) ||
+        widget.annotationLeadingSpace != oldWidget.annotationLeadingSpace ||
+        widget.glyphCache != oldWidget.glyphCache) {
+      _createAnnotations();
     }
   }
 
   @override
   void dispose() {
+    _annotations?.dispose();
     _layout.dispose();
     super.dispose();
+  }
+
+  void _showNotesAt(Offset position, {bool labelsOnly = false}) {
+    if (!widget.showAnnotations) return;
+    final notes = _annotations?.notesAt(position, labelsOnly: labelsOnly);
+    if (notes != null && notes.isNotEmpty) _showNotes(notes);
+  }
+
+  void _showNotes(List<ReadingAnnotation> notes) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('批注'),
+        content: SizedBox(
+          width: 480,
+          height: math.min(420, MediaQuery.sizeOf(context).height * .55),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: notes.length,
+            separatorBuilder: (_, _) => const Divider(height: 28),
+            itemBuilder: (context, index) {
+              final note = notes[index];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    note.ranges.map((range) => range.quote).join(' … '),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(note.text),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -832,23 +935,73 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
+        final notes = widget.showAnnotations
+            ? _annotations?.notesAt(details.localPosition, labelsOnly: true)
+            : null;
+        if (notes != null && notes.isNotEmpty) {
+          _showNotes(notes);
+          return;
+        }
         final rawIndex = _layout.rawIndexForOffset(details.localPosition);
         if (rawIndex != null) widget.onCharTap?.call(rawIndex);
       },
+      onLongPressStart: widget.showAnnotations && _annotations != null
+          ? (details) => _showNotesAt(details.localPosition)
+          : null,
+      onSecondaryTapUp: widget.showAnnotations && _annotations != null
+          ? (details) => _showNotesAt(details.localPosition)
+          : null,
       child: Semantics(
         label: widget.line.text,
         textDirection: widget.direction,
-        child: RepaintBoundary(
-          child: CustomPaint(
-            size: Size(widget.width, _layout.height),
-            painter: ReadingTextPainter(
-              layout: _layout,
-              presentation: widget.presentation,
-              glyphCache: widget.glyphCache,
-              scrollController: widget.scrollController,
-              contentTop: widget.contentTop,
-              viewportHeight: widget.viewportHeight,
-            ),
+        hint: widget.showAnnotations && _annotations != null
+            ? '长按或右键标记文字查看完整批注'
+            : null,
+        customSemanticsActions: widget.showAnnotations && _annotations != null
+            ? {
+                const CustomSemanticsAction(label: '查看本行批注'): () =>
+                    _showNotes(widget.annotations),
+              }
+            : null,
+        child: SizedBox(
+          width: widget.width,
+          height: _layout.height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              RepaintBoundary(
+                child: CustomPaint(
+                  size: Size(widget.width, _layout.height),
+                  painter: ReadingTextPainter(
+                    layout: _layout,
+                    presentation: widget.presentation,
+                    glyphCache: widget.glyphCache,
+                    scrollController: widget.scrollController,
+                    contentTop: widget.contentTop,
+                    viewportHeight: widget.viewportHeight,
+                  ),
+                ),
+              ),
+              if (widget.showAnnotations && _annotations != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: -_annotations!.leadingSpace,
+                  height: _layout.height + _annotations!.leadingSpace,
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: ReadingAnnotationPainter(
+                          layout: _annotations!,
+                          scrollController: widget.scrollController,
+                          contentTop: widget.contentTop,
+                          viewportHeight: widget.viewportHeight,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

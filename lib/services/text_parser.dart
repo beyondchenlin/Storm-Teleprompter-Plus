@@ -70,8 +70,11 @@ class TextParser {
       } else if (lines.isEmpty) {
         beginLine();
       }
+      // Decode only text nodes, once. Escaped '<' must never become a tag;
+      // annotation and speech offsets count displayed UTF-16 units.
+      final decoded = StringBuffer(decodeHtmlEntities(buffer.toString()));
       _flushBuffer(
-        buffer,
+        decoded,
         lines,
         lines.last.lineIndex,
         rawIndex,
@@ -83,7 +86,7 @@ class TextParser {
         backgroundColor,
         textColor,
       );
-      rawIndex += buffer.length;
+      rawIndex += decoded.length;
       buffer.clear();
       previousWasLineBreak = false;
     }
@@ -102,7 +105,6 @@ class TextParser {
         if (tagEnd == -1) {
           // 不完整的标签，当作普通文字
           buffer.write(char);
-          rawIndex++;
           i++;
           continue;
         }
@@ -421,13 +423,22 @@ class TextParser {
   }
 
   static String decodeHtmlEntities(String text) {
-    return text
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&amp;', '&');
+    const named = {
+      'nbsp': ' ', 'lt': '<', 'gt': '>', 'quot': '"', 'apos': "'", 'amp': '&',
+    };
+    return text.replaceAllMapped(
+      RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|nbsp|lt|gt|quot|apos|amp);'),
+      (match) {
+        final value = match.group(1)!;
+        if (!value.startsWith('#')) return named[value]!;
+        final codePoint = value.startsWith('#x')
+            ? int.tryParse(value.substring(2), radix: 16)
+            : int.tryParse(value.substring(1));
+        if (codePoint == null || codePoint <= 0 || codePoint > 0x10ffff ||
+            (codePoint >= 0xd800 && codePoint <= 0xdfff)) return match.group(0)!;
+        return String.fromCharCode(codePoint);
+      },
+    );
   }
 
   static String encodeHtmlEntities(String text) {

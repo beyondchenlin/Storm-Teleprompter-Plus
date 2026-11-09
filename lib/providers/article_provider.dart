@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/reading_annotation.dart';
 import 'connection_provider.dart';
 
 /// 稿件管理状态（前端）
@@ -67,13 +68,19 @@ class ArticleProvider with ChangeNotifier {
   Future<Article?> createArticle({
     required String title,
     required String content,
+    List<ReadingAnnotation> annotations = const [],
     String? folderId,
   }) async {
     try {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleCreate,
-          data: {'title': title, 'content': content, 'folderId': ?folderId},
+          data: {
+            'title': title,
+            'content': content,
+            'annotations': annotations.map((note) => note.toJson()).toList(),
+            'folderId': ?folderId,
+          },
         );
         if (response.type == WsMessageType.articleCreateResponse) {
           final article = Article.fromJson(
@@ -97,12 +104,17 @@ class ArticleProvider with ChangeNotifier {
     String id, {
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
   }) async {
     try {
       if (_connection != null && _connection!.isConnected) {
         final response = await _connection!.request(
           WsMessageType.articleUpdate,
-          data: {'id': id, 'title': ?title, 'content': ?content},
+          data: {
+            'id': id, 'title': ?title, 'content': ?content,
+            if (annotations != null)
+              'annotations': annotations.map((note) => note.toJson()).toList(),
+          },
         );
         if (response.type == WsMessageType.articleUpdateResponse &&
             response.data['success'] == true) {

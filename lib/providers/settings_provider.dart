@@ -138,7 +138,7 @@ class SettingsProvider with ChangeNotifier {
         }
       }
     }
-    for (final key in ['autoScrollMode', 'pixelsPerSecond']) {
+    for (final key in ['autoScrollMode', 'pixelsPerSecond', 'showAnnotations']) {
       if (settings.containsKey(key) &&
           _articleOverrides[key] != settings[key]) {
         _articleOverrides[key] = settings[key];
@@ -181,6 +181,9 @@ class SettingsProvider with ChangeNotifier {
     }
     _syncTeleprompterSettingsToBackend();
   }
+
+  Future<void> setShowAnnotations(bool value) =>
+      _setAndSave(overrideData: {'showAnnotations': value});
 
   void _syncTeleprompterSettingsToBackend() {
     final connection = _connection;

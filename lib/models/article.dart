@@ -1,3 +1,5 @@
+import 'reading_annotation.dart';
+
 /// 稿件数据模型
 ///
 /// 存储提词器稿件信息。
@@ -5,6 +7,7 @@ class Article {
   final String id;
   final String title;
   final String content;
+  final List<ReadingAnnotation> annotations;
   final DateTime createdAt;
   final DateTime updatedAt;
   final int sortOrder;
@@ -15,6 +18,7 @@ class Article {
     required this.id,
     required this.title,
     required this.content,
+    this.annotations = const [],
     required this.createdAt,
     required this.updatedAt,
     this.sortOrder = 0,
@@ -28,6 +32,7 @@ class Article {
       id: json['id'] as String,
       title: json['title'] as String,
       content: json['content'] as String,
+      annotations: ReadingAnnotation.listFromJson(json['annotations']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       sortOrder: json['sortOrder'] as int? ?? 0,
@@ -44,6 +49,8 @@ class Article {
       'id': id,
       'title': title,
       'content': content,
+      if (annotations.isNotEmpty)
+        'annotations': annotations.map((note) => note.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'sortOrder': sortOrder,
@@ -58,6 +65,7 @@ class Article {
     String? id,
     String? title,
     String? content,
+    List<ReadingAnnotation>? annotations,
     DateTime? createdAt,
     DateTime? updatedAt,
     int? sortOrder,
@@ -69,6 +77,7 @@ class Article {
       id: id ?? this.id,
       title: title ?? this.title,
       content: content ?? this.content,
+      annotations: annotations ?? this.annotations,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       sortOrder: sortOrder ?? this.sortOrder,
