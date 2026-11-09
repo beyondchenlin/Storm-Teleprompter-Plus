@@ -180,9 +180,7 @@ class ReadingAnnotationLayout {
     if (layout.rows.isEmpty) return layout.height;
     final row = layout.rows.last;
     var bottom = row.top;
-    for (final placement in layout.placementsIn(
-      Rect.fromLTWH(0, row.top, layout.width, row.height),
-    )) {
+    for (final placement in layout.placementsForRow(layout.rows.length - 1)) {
       bottom = math.max(
         bottom,
         layout.maximumGlyphBounds(placement, cache).bottom,
@@ -199,7 +197,7 @@ class ReadingAnnotationLayout {
     }
     final row = textLayout.rows[index];
     final placements = textLayout
-        .placementsIn(Rect.fromLTWH(0, row.top, textLayout.width, row.height))
+        .placementsForRow(index)
         .toList(growable: false);
     final bounds = [
       for (final placement in placements)

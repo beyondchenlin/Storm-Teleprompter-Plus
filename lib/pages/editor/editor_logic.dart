@@ -28,6 +28,15 @@ mixin EditorLogic on State<EditorPage> {
   bool _syncingEditorContent = false;
   int _editRevision = 0;
 
+  // Keys are the actual Quill history entries, never a text search or a body
+  // hash. Only anchors enter this history; the current note text always wins.
+  final Map<qd.Delta, _AnnotationHistoryRecord> _annotationHistory =
+      Map<qd.Delta, _AnnotationHistoryRecord>.identity();
+  List<qd.Delta> _knownAnnotationUndo = const [];
+  quill.Document? _annotationHistoryDocument;
+  qd.Delta? _lastAnnotationDocumentDelta;
+  _AnnotationHistoryReplay? _annotationHistoryReplay;
+
   bool isDirty = false;
   bool isSaving = false;
   bool isFindReplaceVisible = false;
@@ -65,7 +74,8 @@ mixin EditorLogic on State<EditorPage> {
     replaceController = TextEditingController();
     editorFocusNode = FocusNode(debugLabel: 'ArticleEditor');
     findFocusNode = FocusNode(debugLabel: 'FindReplace');
-    quillController = quill.QuillController(
+    quillController = _AnnotationQuillController(
+      onHistoryReplay: _performAnnotationHistoryReplay,
       document: quill.Document.fromDelta(
         _contentToDelta(widget.article?.content ?? ''),
       ),
@@ -94,6 +104,7 @@ mixin EditorLogic on State<EditorPage> {
       _annotations,
     );
     contentController.text = initialHtml;
+    _resetAnnotationHistory();
 
     titleController.addListener(_markChanged);
     quillController.addListener(_onQuillContentChanged);
@@ -173,29 +184,214 @@ mixin EditorLogic on State<EditorPage> {
   void _onQuillContentChanged() {
     if (_syncingEditorContent) return;
 
-    final rawHtml = _deltaToStorageHtml(quillController.document.toDelta());
+    if (!identical(quillController.document, _annotationHistoryDocument)) {
+      _resetAnnotationHistory();
+    }
+    final delta = quillController.document.toDelta();
+    final rawHtml = _deltaToStorageHtml(delta);
     final html = _sanitizeStorageHtml(rawHtml);
     if (html != rawHtml) {
       _replaceEditorHtml(html);
       return;
     }
     if (html == contentController.text) {
+      if (_annotationHistoryReplay == null) {
+        _recordAnnotationEdit(_annotations, delta);
+      }
       if (mounted) setState(() {});
       return;
     }
 
-    _annotations = AnnotationAnchors.remap(
-      contentController.text,
-      html,
-      _annotations,
-    );
+    final previousAnnotations = _annotations;
+    if (_annotationHistoryReplay == null) {
+      _annotations = AnnotationAnchors.remap(
+        contentController.text,
+        html,
+        _annotations,
+      );
+    }
     _syncingEditorContent = true;
     contentController.value = TextEditingValue(
       text: html,
       selection: TextSelection.collapsed(offset: html.length),
     );
     _syncingEditorContent = false;
-    _markChanged();
+    if (_annotationHistoryReplay == null) {
+      _recordAnnotationEdit(previousAnnotations, delta);
+      _markChanged();
+    }
+  }
+
+  void _resetAnnotationHistory() {
+    _annotationHistory.clear();
+    _annotationHistoryDocument = quillController.document;
+    _rememberAnnotationHistory(quillController.document.toDelta());
+  }
+
+  void _rememberAnnotationHistory(qd.Delta delta) {
+    final stack = quillController.document.history.stack;
+    final active = Set<qd.Delta>.identity()
+      ..addAll(stack.undo)
+      ..addAll(stack.redo);
+    _annotationHistory.removeWhere((entry, _) => !active.contains(entry));
+    _knownAnnotationUndo = List.of(stack.undo);
+    _lastAnnotationDocumentDelta = delta;
+  }
+
+  void _recordAnnotationEdit(
+    List<ReadingAnnotation> previousAnnotations,
+    qd.Delta delta,
+  ) {
+    final undo = quillController.document.history.stack.undo;
+    final previousDelta = _lastAnnotationDocumentDelta;
+    final oldTop = _knownAnnotationUndo.isEmpty
+        ? null
+        : _knownAnnotationUndo.last;
+    final newTop = undo.isEmpty ? null : undo.last;
+    if (newTop != null &&
+        !identical(newTop, oldTop) &&
+        previousDelta != null) {
+      // A controller operation can contain several document operations. Check
+      // the real undo target before associating an anchor snapshot with it.
+      final target = delta.compose(newTop);
+      Map<String, _AnnotationAnchorState>? before;
+      if (target == previousDelta) {
+        before = _captureAnnotationAnchors(previousAnnotations);
+      } else if (oldTop != null &&
+          undo.length == _knownAnnotationUndo.length &&
+          _sameHistoryEntries(
+            undo.take(undo.length - 1),
+            _knownAnnotationUndo.take(_knownAnnotationUndo.length - 1),
+          ) &&
+          target == previousDelta.compose(oldTop)) {
+        final previousRecord = _annotationHistory[oldTop];
+        if (previousRecord != null) {
+          final current = _captureAnnotationAnchors(previousAnnotations);
+          before = {
+            for (final entry in previousRecord.before.entries)
+              // An explicit reattachment between two coalesced edits must not
+              // inherit the old location of this note in the merged group.
+              if (current[entry.key]?.sameAs(
+                    previousRecord.after[entry.key],
+                  ) ??
+                  false)
+                entry.key: entry.value,
+          };
+        }
+      }
+      if (before != null) {
+        _annotationHistory[newTop] = _AnnotationHistoryRecord(
+          before: before,
+          after: _captureAnnotationAnchors(_annotations),
+        );
+      }
+    } else if (identical(newTop, oldTop) &&
+        previousDelta != null &&
+        delta != previousDelta) {
+      // An unrecorded external mutation invalidates the provenance. Keep notes
+      // conservative rather than reusing unrelated stack entries later.
+      _annotationHistory.clear();
+    }
+    _rememberAnnotationHistory(delta);
+  }
+
+  void _performAnnotationHistoryReplay(bool redo, VoidCallback operation) {
+    // Flush any controller operation which deliberately deferred its notify.
+    _onQuillContentChanged();
+    final document = quillController.document;
+    final stack = document.history.stack;
+    final source = redo ? stack.redo : stack.undo;
+    if (source.isEmpty) {
+      operation();
+      return;
+    }
+    final replay = _AnnotationHistoryReplay(
+      redo: redo,
+      document: document,
+      entry: source.last,
+      undo: List.of(stack.undo),
+      redoEntries: List.of(stack.redo),
+      content: contentController.text,
+      anchors: _captureAnnotationAnchors(_annotations),
+    );
+    _annotationHistoryReplay = replay;
+    var succeeded = false;
+    try {
+      operation();
+      succeeded = true;
+    } finally {
+      _finishAnnotationHistoryReplay(replay, succeeded: succeeded);
+    }
+  }
+
+  void _finishAnnotationHistoryReplay(
+    _AnnotationHistoryReplay replay, {
+    required bool succeeded,
+  }) {
+    // The controller normally notifies synchronously after its document has
+    // changed. Also cover a history operation whose notification was skipped.
+    _onQuillContentChanged();
+    _annotationHistoryReplay = null;
+    final currentNotes = _annotations;
+    final currentAnchors = _captureAnnotationAnchors(currentNotes);
+    final stack = quillController.document.history.stack;
+    final source = replay.redo ? stack.redo : stack.undo;
+    final destination = replay.redo ? stack.undo : stack.redo;
+    final previousSource = replay.redo ? replay.redoEntries : replay.undo;
+    final previousDestination = replay.redo ? replay.undo : replay.redoEntries;
+    final replayed = succeeded &&
+        identical(quillController.document, replay.document) &&
+        _sameHistoryEntries(
+          source,
+          previousSource.take(previousSource.length - 1),
+        ) &&
+        destination.length == previousDestination.length + 1 &&
+        _sameHistoryEntries(
+          destination.take(previousDestination.length),
+          previousDestination,
+        );
+    final record = replayed ? _annotationHistory[replay.entry] : null;
+    final expected = replay.redo ? record?.before : record?.after;
+    final target = replay.redo ? record?.after : record?.before;
+    final body = AnnotationAnchors.bodyText(contentController.text);
+    final remapped = AnnotationAnchors.remap(
+      replay.content,
+      contentController.text,
+      currentNotes,
+    );
+    _annotations = List.unmodifiable(
+      remapped.map((note) {
+        final current = currentAnchors[note.id];
+        final restored = target?[note.id];
+        if (current == null ||
+            !(current.sameAs(expected?[note.id])) ||
+            !(current.sameAs(replay.anchors[note.id])) ||
+            restored == null ||
+            !restored.canApplyTo(body)) {
+          return note;
+        }
+        return restored.applyTo(note);
+      }),
+    );
+    if (replayed) {
+      final after = _captureAnnotationAnchors(_annotations);
+      // Capture the actual inverse transition, including notes created after
+      // the body edit. Undo retains those notes as pending; redo can then
+      // restore their exact locations without reviving deleted notes.
+      _annotationHistory[destination.last] = _AnnotationHistoryRecord(
+        before: replay.redo ? currentAnchors : after,
+        after: replay.redo ? after : currentAnchors,
+      );
+    } else {
+      _annotationHistory.clear();
+    }
+    _rememberAnnotationHistory(quillController.document.toDelta());
+    if (replay.content != contentController.text ||
+        !_sameAnnotationAnchorLists(currentNotes, _annotations)) {
+      _markChanged();
+    } else if (mounted) {
+      setState(() {});
+    }
   }
 
   void _markChanged() {
@@ -519,11 +715,13 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   void _replaceEditorHtml(String html) {
-    _annotations = AnnotationAnchors.remap(
-      contentController.text,
-      html,
-      _annotations,
-    );
+    if (_annotationHistoryReplay == null) {
+      _annotations = AnnotationAnchors.remap(
+        contentController.text,
+        html,
+        _annotations,
+      );
+    }
     _syncingEditorContent = true;
     quillController.document = quill.Document.fromDelta(_contentToDelta(html));
     contentController.value = TextEditingValue(
@@ -531,7 +729,8 @@ mixin EditorLogic on State<EditorPage> {
       selection: TextSelection.collapsed(offset: html.length),
     );
     _syncingEditorContent = false;
-    _markChanged();
+    _resetAnnotationHistory();
+    if (_annotationHistoryReplay == null) _markChanged();
   }
 
   qd.Delta _contentToDelta(String content) {
@@ -906,6 +1105,134 @@ mixin EditorLogic on State<EditorPage> {
     final normalized = TextParser.normalizeQuotePairs(decoded);
     return TextParser.encodeHtmlEntities(normalized);
   }
+}
+
+/// Only explicit controller history actions may recover an invalidated anchor.
+/// Ordinary typing, even when it recreates identical text, never takes this path.
+class _AnnotationQuillController extends quill.QuillController {
+  _AnnotationQuillController({
+    required super.document,
+    required super.selection,
+    required super.config,
+    required this.onHistoryReplay,
+  });
+
+  final void Function(bool redo, VoidCallback operation) onHistoryReplay;
+
+  @override
+  void undo() => onHistoryReplay(false, () => super.undo());
+
+  @override
+  void redo() => onHistoryReplay(true, () => super.redo());
+}
+
+class _AnnotationAnchorState {
+  _AnnotationAnchorState(ReadingAnnotation note)
+      : ranges = List.unmodifiable(note.ranges),
+        unresolvedReason = note.unresolvedReason;
+
+  final List<AnnotationRange> ranges;
+  final String? unresolvedReason;
+
+  bool sameAs(_AnnotationAnchorState? other) {
+    if (other == null ||
+        unresolvedReason != other.unresolvedReason ||
+        ranges.length != other.ranges.length) {
+      return false;
+    }
+    for (var index = 0; index < ranges.length; index++) {
+      final left = ranges[index];
+      final right = other.ranges[index];
+      if (left.start != right.start ||
+          left.end != right.end ||
+          left.quote != right.quote) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool canApplyTo(String body) =>
+      unresolvedReason != null ||
+      ranges.every((range) => AnnotationAnchors.matches(body, range));
+
+  ReadingAnnotation applyTo(ReadingAnnotation current) => current.copyWith(
+    ranges: ranges,
+    unresolvedReason: unresolvedReason,
+    clearUnresolvedReason: unresolvedReason == null,
+  );
+}
+
+Map<String, _AnnotationAnchorState> _captureAnnotationAnchors(
+  List<ReadingAnnotation> notes,
+) {
+  final anchors = <String, _AnnotationAnchorState>{};
+  final seen = <String>{};
+  for (final note in notes) {
+    if (note.id.isEmpty) continue;
+    if (!seen.add(note.id)) {
+      // Malformed imported duplicate IDs cannot identify a unique note.
+      anchors.remove(note.id);
+      continue;
+    }
+    anchors[note.id] = _AnnotationAnchorState(note);
+  }
+  return anchors;
+}
+
+bool _sameAnnotationAnchorLists(
+  List<ReadingAnnotation> before,
+  List<ReadingAnnotation> after,
+) {
+  if (before.length != after.length) return false;
+  for (var index = 0; index < before.length; index++) {
+    if (before[index].id != after[index].id ||
+        !_AnnotationAnchorState(before[index]).sameAs(
+          _AnnotationAnchorState(after[index]),
+        )) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _sameHistoryEntries(Iterable<qd.Delta> left, Iterable<qd.Delta> right) {
+  final leftIterator = left.iterator;
+  final rightIterator = right.iterator;
+  while (leftIterator.moveNext()) {
+    if (!rightIterator.moveNext() ||
+        !identical(leftIterator.current, rightIterator.current)) {
+      return false;
+    }
+  }
+  return !rightIterator.moveNext();
+}
+
+class _AnnotationHistoryRecord {
+  const _AnnotationHistoryRecord({required this.before, required this.after});
+
+  final Map<String, _AnnotationAnchorState> before;
+  final Map<String, _AnnotationAnchorState> after;
+}
+
+class _AnnotationHistoryReplay {
+  const _AnnotationHistoryReplay({
+    required this.redo,
+    required this.document,
+    required this.entry,
+    required this.undo,
+    required this.redoEntries,
+    required this.content,
+    required this.anchors,
+  });
+
+  final bool redo;
+  final quill.Document document;
+  final qd.Delta entry;
+  final List<qd.Delta> undo;
+  final List<qd.Delta> redoEntries;
+  final String content;
+  final Map<String, _AnnotationAnchorState> anchors;
 }
 
 class _EditorDraft {

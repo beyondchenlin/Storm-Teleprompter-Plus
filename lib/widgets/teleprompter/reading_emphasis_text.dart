@@ -502,6 +502,23 @@ class ReadingTextLayout {
     }
   }
 
+  /// Enumerate membership in one visual line, not intersection with its
+  /// vertical rectangle. Font metrics can round adjacent line tops/heights
+  /// differently, leaving a fractional overlap between their rectangles.
+  /// That overlap is useful for paint clipping but must never merge the two
+  /// lines' annotation envelopes or duplicate a word's annotation frame.
+  Iterable<ReadingGlyphPlacement> placementsForRow(int rowIndex) sync* {
+    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length) return;
+    final row = rows[rowIndex];
+    if (row.end <= row.start) return;
+    final first = _indexForCodeUnit(row.start);
+    final last = _indexForCodeUnit(row.end - 1);
+    for (var index = first; index <= last; index++) {
+      final placement = placementAt(index);
+      if (identical(placement.row, row)) yield placement;
+    }
+  }
+
   /// A conservative font envelope at the largest permitted emphasis. Leading
   /// from the user's line-height is deliberately excluded: only genuinely
   /// empty space around this envelope is available for reading annotations.
