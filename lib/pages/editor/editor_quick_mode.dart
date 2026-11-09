@@ -6,8 +6,9 @@ mixin EditorQuickMode on State<EditorPage>, EditorLogic {
   final _manualSaveAction = SingleFlightAction<bool>();
   bool _routeExitApproved = false;
 
-  bool get canLeaveRoute => _routeExitApproved || !widget.isActive ||
-      (!widget.quickMode && !isDirty && !isSaving);
+  // Gate every active route. A keystroke and back action can arrive before a
+  // rebuild has updated a dirty-dependent PopScope value.
+  bool get canLeaveRoute => _routeExitApproved || !widget.isActive;
 
   /// 显式保存允许选择位置，已有稿件复用原记录而不是创建副本。
   Future<bool> manualSave() => _manualSaveAction.run(_manualSave);
