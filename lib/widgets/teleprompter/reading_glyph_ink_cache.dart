@@ -88,8 +88,7 @@ class ReadingGlyphInkCache extends ChangeNotifier {
 
   /// Waits for queued/in-flight captures and their coalesced notifications.
   /// A disposed cache still waits for native work to release its resources.
-  Future<void> get settled =>
-      _settledCompleter?.future ?? Future<void>.value();
+  Future<void> get settled => _settledCompleter?.future ?? Future<void>.value();
 
   @visibleForTesting
   int get length => _cache.length;

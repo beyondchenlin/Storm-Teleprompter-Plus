@@ -12,9 +12,9 @@ Future<void> _loadFixtureFont() async {
   if (_fontLoaded) return;
   final loader = FontLoader('ReadingInkFixture')
     ..addFont(
-      File('test/fixtures/reading_emphasis/DejaVuSansMono-BoldOblique.ttf')
-          .readAsBytes()
-          .then(ByteData.sublistView),
+      File(
+        'test/fixtures/reading_emphasis/DejaVuSansMono-BoldOblique.ttf',
+      ).readAsBytes().then(ByteData.sublistView),
     );
   await loader.load();
   _fontLoaded = true;
@@ -48,7 +48,10 @@ Future<Rect> _actualInk(TextPainter painter) async {
   try {
     image = await picture.toImage(width, height);
     final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
-    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
     var left = width;
     var top = height;
     var right = -1;
@@ -97,9 +100,17 @@ void main() {
       final originalSize = painter.size;
       final originalText = painter.text;
       try {
-        expect(cache.boundsFor('Áj', style, TextDirection.ltr, painter), isNull);
+        expect(
+          cache.boundsFor('Áj', style, TextDirection.ltr, painter),
+          isNull,
+        );
         await cache.settled;
-        final bounds = cache.boundsFor('Áj', style, TextDirection.ltr, painter)!;
+        final bounds = cache.boundsFor(
+          'Áj',
+          style,
+          TextDirection.ltr,
+          painter,
+        )!;
         final actual = await _actualInk(painter);
         expect(actual.isEmpty, isFalse);
         expect(bounds.left, lessThanOrEqualTo(actual.left));
@@ -134,7 +145,12 @@ void main() {
       await cache.settled;
       final replacement = _painter('j', _style);
       try {
-        final bounds = cache.boundsFor('j', _style, TextDirection.ltr, replacement);
+        final bounds = cache.boundsFor(
+          'j',
+          _style,
+          TextDirection.ltr,
+          replacement,
+        );
         expect(bounds, isNotNull);
         expect(cache.revision, 1);
         expect(notifications, 1);
@@ -164,11 +180,22 @@ void main() {
       );
       final decorated = _painter(' ', decoratedStyle);
       try {
-        expect(cache.boundsFor(' ', _style, TextDirection.ltr, blank), Rect.zero);
+        expect(
+          cache.boundsFor(' ', _style, TextDirection.ltr, blank),
+          Rect.zero,
+        );
         expect(cache.debugPendingCount, 0);
-        expect(cache.boundsFor(' ', decoratedStyle, TextDirection.ltr, decorated), isNull);
+        expect(
+          cache.boundsFor(' ', decoratedStyle, TextDirection.ltr, decorated),
+          isNull,
+        );
         await cache.settled;
-        final bounds = cache.boundsFor(' ', decoratedStyle, TextDirection.ltr, decorated)!;
+        final bounds = cache.boundsFor(
+          ' ',
+          decoratedStyle,
+          TextDirection.ltr,
+          decorated,
+        )!;
         expect(bounds.isEmpty, isFalse);
         final actual = await _actualInk(decorated);
         expect(actual.isEmpty, isFalse);
@@ -188,11 +215,21 @@ void main() {
   testWidgets('缓存、排队和并行数量有界，淘汰后按需重新测量', (tester) async {
     await tester.runAsync(() async {
       await _loadFixtureFont();
-      final cache = ReadingGlyphInkCache(capacity: 2, pendingLimit: 3, concurrency: 1);
-      final painters = {for (final text in ['A', 'B', 'C', 'D', 'E']) text: _painter(text, _style)};
+      final cache = ReadingGlyphInkCache(
+        capacity: 2,
+        pendingLimit: 3,
+        concurrency: 1,
+      );
+      final painters = {
+        for (final text in ['A', 'B', 'C', 'D', 'E'])
+          text: _painter(text, _style),
+      };
       try {
         for (final entry in painters.entries) {
-          expect(cache.boundsFor(entry.key, _style, TextDirection.ltr, entry.value), isNull);
+          expect(
+            cache.boundsFor(entry.key, _style, TextDirection.ltr, entry.value),
+            isNull,
+          );
         }
         expect(cache.debugPendingCount, 3);
         expect(cache.debugActiveCount, 1);
@@ -202,13 +239,24 @@ void main() {
         expect(cache.debugPeakActiveCount, 1);
         expect(cache.debugLivePictureCount, 0);
         expect(cache.debugLiveImageCount, 0);
-        expect(cache.boundsFor('C', _style, TextDirection.ltr, painters['C']!), isNotNull);
-        expect(cache.boundsFor('A', _style, TextDirection.ltr, painters['A']!), isNull);
+        expect(
+          cache.boundsFor('C', _style, TextDirection.ltr, painters['C']!),
+          isNotNull,
+        );
+        expect(
+          cache.boundsFor('A', _style, TextDirection.ltr, painters['A']!),
+          isNull,
+        );
         await cache.settled;
         expect(cache.length, 2);
-        expect(cache.boundsFor('A', _style, TextDirection.ltr, painters['A']!), isNotNull);
+        expect(
+          cache.boundsFor('A', _style, TextDirection.ltr, painters['A']!),
+          isNotNull,
+        );
       } finally {
-        for (final painter in painters.values) { painter.dispose(); }
+        for (final painter in painters.values) {
+          painter.dispose();
+        }
         cache.dispose();
         await cache.settled;
       }
