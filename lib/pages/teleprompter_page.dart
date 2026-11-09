@@ -467,6 +467,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     // 进度条右侧文字大小 = 正文的 settings.progressInfoSizeRatio (默认 60%)
     final infoFontSize = settings.fontSize * settings.progressInfoSizeRatio;
     final clampedFontSize = infoFontSize.clamp(11.0, 48.0);
+    final infoGap = (clampedFontSize * .4).clamp(10.0, 16.0).toDouble();
     final barHeight = _progressBarHeight(settings);
 
     // 构建信息文本（根据各项开关动态显示）
@@ -478,12 +479,12 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             fontFeatures: const [FontFeature.tabularFigures()],
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 速度（阅读模式且允许显示）
       if (settings.scrollMode != ScrollMode.asr &&
@@ -493,11 +494,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 百分比
       if (settings.progressShowPercentage) ...[
@@ -506,11 +507,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: infoGap),
       ],
       // 当前时间
       if (settings.progressShowCurrentTime) ...[
@@ -519,7 +520,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: clampedFontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             fontFeatures: const [FontFeature.tabularFigures()],
             shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
           ),

@@ -62,6 +62,7 @@ class _ReadingAnnotationAppearanceDialogState
     ),
   ];
   static const _colors = <(String, int)>[
+    ('柔和灰蓝（默认）', AppSettings.defaultAnnotationColor),
     ('青白', 0xFF8BD1D0),
     ('纯白', 0xFFFFFFFF),
     ('暖黄', 0xFFFFD875),
@@ -130,7 +131,13 @@ class _ReadingAnnotationAppearanceDialogState
       background.computeLuminance(),
       foreground.computeLuminance(),
     );
-    final lowContrast = (light + .05) / (dark + .05) < 3;
+    final lowContrast = (light + .05) / (dark + .05) < 4.5;
+    final colorName =
+        _colors
+            .where((choice) => choice.$2 == _settings.annotationColor)
+            .firstOrNull
+            ?.$1 ??
+        '自定义';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -192,7 +199,15 @@ class _ReadingAnnotationAppearanceDialogState
           ),
         ),
         const SizedBox(height: 18),
-        const Text('批注颜色', style: TextStyle(fontWeight: FontWeight.w600)),
+        Text(
+          '批注颜色 · $colorName',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '默认灰蓝更柔和；需要强调时，可自行选择亮色。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 6,
@@ -203,6 +218,7 @@ class _ReadingAnnotationAppearanceDialogState
                 message: choice.$1,
                 child: Semantics(
                   label: '${choice.$1}批注',
+                  button: true,
                   selected: _settings.annotationColor == choice.$2,
                   child: InkWell(
                     key: ValueKey('annotation-color-${choice.$2}'),
