@@ -152,7 +152,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('取消'));
     await _settle(tester);
-    await tester.pump(const Duration(milliseconds: 200));
+    // The production key debounce uses the real wall clock.
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(session.teleprompter.isPlaying, isFalse);
