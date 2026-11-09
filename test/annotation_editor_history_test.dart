@@ -10,13 +10,16 @@ import 'package:storm_teleprompter_plus/services/annotation_anchors.dart';
 
 import 'support/quick_workspace_test_host.dart';
 
-ReadingAnnotation _note(String id, int start, String quote) => ReadingAnnotation(
-  id: id,
-  text: '原始提示',
-  source: 'docx',
-  page: 2,
-  ranges: [AnnotationRange(start: start, end: start + quote.length, quote: quote)],
-);
+ReadingAnnotation _note(String id, int start, String quote) =>
+    ReadingAnnotation(
+      id: id,
+      text: '原始提示',
+      source: 'docx',
+      page: 2,
+      ranges: [
+        AnnotationRange(start: start, end: start + quote.length, quote: quote),
+      ],
+    );
 
 Future<EditorPageState> _mount(
   WidgetTester tester,
@@ -79,7 +82,10 @@ void _select(EditorPageState editor, int start, int end) =>
 
 Future<void> _finishNoteDialog(WidgetTester tester, String text) async {
   await tester.pumpAndSettle();
-  await tester.enterText(find.byKey(const ValueKey('annotation-text-input')), text);
+  await tester.enterText(
+    find.byKey(const ValueKey('annotation-text-input')),
+    text,
+  );
   await tester.tap(find.text('保存批注'));
   await tester.pumpAndSettle();
 }
@@ -115,12 +121,9 @@ void _expectAnchor(ReadingAnnotation note, int start, String quote) {
 void main() {
   testWidgets('正文撤销恢复导入锚点但保留最新备注内容和来源，重做再次待定位', (tester) async {
     final articles = QuickTestArticles();
-    final editor = await _mount(
-      tester,
-      '开始不是结束',
-      [_note('imported', 2, '不是')],
-      articles: articles,
-    );
+    final editor = await _mount(tester, '开始不是结束', [
+      _note('imported', 2, '不是'),
+    ], articles: articles);
     _replace(editor, 2, 2, '应该');
     expect(editor.annotations.single.isAnchored, isFalse);
     await _editNote(tester, editor, '最新提示\n停一秒再重读');
@@ -241,7 +244,10 @@ void main() {
     _replace(editor, 8, 0, '后', merge: true);
     expect(editor.quillController.document.history.stack.undo, hasLength(1));
     editor.quillController.undo();
-    expect(AnnotationAnchors.bodyText(editor.contentController.text), '甲不是乙不是丙');
+    expect(
+      AnnotationAnchors.bodyText(editor.contentController.text),
+      '甲不是乙不是丙',
+    );
     expect(editor.annotations.single.isAnchored, isFalse);
     editor.quillController.redo();
     _expectAnchor(editor.annotations.single, 5, '不是');

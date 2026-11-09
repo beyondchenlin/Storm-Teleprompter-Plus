@@ -58,7 +58,8 @@ void main() {
     // path must no longer confuse it with exact line membership.
     final first = body.rows.first;
     expect(
-      body.placementsIn(Rect.fromLTWH(0, first.top, body.width, first.height))
+      body
+          .placementsIn(Rect.fromLTWH(0, first.top, body.width, first.height))
           .any((placement) => identical(placement.row, body.rows[1])),
       isTrue,
     );

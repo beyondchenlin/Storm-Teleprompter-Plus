@@ -248,9 +248,7 @@ mixin EditorLogic on State<EditorPage> {
         ? null
         : _knownAnnotationUndo.last;
     final newTop = undo.isEmpty ? null : undo.last;
-    if (newTop != null &&
-        !identical(newTop, oldTop) &&
-        previousDelta != null) {
+    if (newTop != null && !identical(newTop, oldTop) && previousDelta != null) {
       // A controller operation can contain several document operations. Check
       // the real undo target before associating an anchor snapshot with it.
       final target = delta.compose(newTop);
@@ -271,9 +269,7 @@ mixin EditorLogic on State<EditorPage> {
             for (final entry in previousRecord.before.entries)
               // An explicit reattachment between two coalesced edits must not
               // inherit the old location of this note in the merged group.
-              if (current[entry.key]?.sameAs(
-                    previousRecord.after[entry.key],
-                  ) ??
+              if (current[entry.key]?.sameAs(previousRecord.after[entry.key]) ??
                   false)
                 entry.key: entry.value,
           };
@@ -339,7 +335,8 @@ mixin EditorLogic on State<EditorPage> {
     final destination = replay.redo ? stack.undo : stack.redo;
     final previousSource = replay.redo ? replay.redoEntries : replay.undo;
     final previousDestination = replay.redo ? replay.undo : replay.redoEntries;
-    final replayed = succeeded &&
+    final replayed =
+        succeeded &&
         identical(quillController.document, replay.document) &&
         _sameHistoryEntries(
           source,
@@ -1128,8 +1125,8 @@ class _AnnotationQuillController extends quill.QuillController {
 
 class _AnnotationAnchorState {
   _AnnotationAnchorState(ReadingAnnotation note)
-      : ranges = List.unmodifiable(note.ranges),
-        unresolvedReason = note.unresolvedReason;
+    : ranges = List.unmodifiable(note.ranges),
+      unresolvedReason = note.unresolvedReason;
 
   final List<AnnotationRange> ranges;
   final String? unresolvedReason;
@@ -1187,9 +1184,9 @@ bool _sameAnnotationAnchorLists(
   if (before.length != after.length) return false;
   for (var index = 0; index < before.length; index++) {
     if (before[index].id != after[index].id ||
-        !_AnnotationAnchorState(before[index]).sameAs(
-          _AnnotationAnchorState(after[index]),
-        )) {
+        !_AnnotationAnchorState(
+          before[index],
+        ).sameAs(_AnnotationAnchorState(after[index]))) {
       return false;
     }
   }
