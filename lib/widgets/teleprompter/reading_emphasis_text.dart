@@ -512,10 +512,9 @@ class ReadingTextLayout {
   ) {
     final painter = cache.painterFor(
       placement.grapheme.text,
-      geometry.styleFor(placement.grapheme.format, reserve: true).copyWith(
-        height: ui.kTextHeightNone,
-        letterSpacing: 0,
-      ),
+      geometry
+          .styleFor(placement.grapheme.format, reserve: true)
+          .copyWith(height: ui.kTextHeightNone, letterSpacing: 0),
       direction,
     );
     final baseline = painter.computeDistanceToActualBaseline(
@@ -843,10 +842,12 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   bool openAnnotationLabelAt(Offset position) =>
       openAnnotationsAt(position, labelsOnly: true);
 
-  List<ReadingAnnotation> annotationsAt(Offset position, {bool labelsOnly = false}) =>
-      widget.showAnnotations
-          ? _annotations?.notesAt(position, labelsOnly: labelsOnly) ?? const []
-          : const [];
+  List<ReadingAnnotation> annotationsAt(
+    Offset position, {
+    bool labelsOnly = false,
+  }) => widget.showAnnotations
+      ? _annotations?.notesAt(position, labelsOnly: labelsOnly) ?? const []
+      : const [];
 
   bool openAnnotationsAt(Offset position, {bool labelsOnly = false}) {
     final notes = annotationsAt(position, labelsOnly: labelsOnly);

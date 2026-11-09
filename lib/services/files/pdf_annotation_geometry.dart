@@ -115,8 +115,8 @@ PdfAnnotationMatch matchPdfAnnotationRanges({
     var end = selected.first.end;
     for (final glyph in selected.skip(1)) {
       final overlaps = glyph.start <= end;
-      final onlyWhitespaceBetween = !overlaps &&
-          body.substring(end, glyph.start).trim().isEmpty;
+      final onlyWhitespaceBetween =
+          !overlaps && body.substring(end, glyph.start).trim().isEmpty;
       if (overlaps || onlyWhitespaceBetween) {
         end = math.max(end, glyph.end);
       } else {

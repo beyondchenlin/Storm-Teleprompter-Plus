@@ -444,8 +444,14 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
         } else {
           importedCount++;
           importedNotes += article.annotations.length;
-          pendingNotes += article.annotations.where((note) => !note.isAnchored).length;
-          warnings.addAll(file.article.warnings.map((message) => '${file.article.title}：$message'));
+          pendingNotes += article.annotations
+              .where((note) => !note.isAnchored)
+              .length;
+          warnings.addAll(
+            file.article.warnings.map(
+              (message) => '${file.article.title}：$message',
+            ),
+          );
         }
       }
       completedSteps++;
@@ -488,17 +494,27 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('已导入 $importedCount 篇稿件、$importedNotes 条批注。'),
-                if (pendingNotes > 0) Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text('$pendingNotes 条批注没有可确认的字词范围。打开稿件的“批注管理”，选中原文后绑定；备注内容已保留。'),
-                ),
-                for (final message in [...warnings, ...errors]) Padding(
-                  padding: const EdgeInsets.only(top: 8), child: Text(message),
-                ),
+                if (pendingNotes > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      '$pendingNotes 条批注没有可确认的字词范围。打开稿件的“批注管理”，选中原文后绑定；备注内容已保留。',
+                    ),
+                  ),
+                for (final message in [...warnings, ...errors])
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(message),
+                  ),
               ],
             ),
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了'),
+            ),
+          ],
         ),
       );
     }
@@ -535,7 +551,10 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
   Future<void> _importFilesFromMenu() async {
     final files = await openFiles(
       acceptedTypeGroups: const [
-        XTypeGroup(label: '稿件文件', extensions: ['txt', 'docx', 'pdf', 'html', 'htm']),
+        XTypeGroup(
+          label: '稿件文件',
+          extensions: ['txt', 'docx', 'pdf', 'html', 'htm'],
+        ),
       ],
     );
     if (files.isEmpty) return;

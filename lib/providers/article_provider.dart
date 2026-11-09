@@ -111,7 +111,9 @@ class ArticleProvider with ChangeNotifier {
         final response = await _connection!.request(
           WsMessageType.articleUpdate,
           data: {
-            'id': id, 'title': ?title, 'content': ?content,
+            'id': id,
+            'title': ?title,
+            'content': ?content,
             if (annotations != null)
               'annotations': annotations.map((note) => note.toJson()).toList(),
           },

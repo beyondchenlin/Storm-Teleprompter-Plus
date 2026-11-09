@@ -138,7 +138,11 @@ class SettingsProvider with ChangeNotifier {
         }
       }
     }
-    for (final key in ['autoScrollMode', 'pixelsPerSecond', 'showAnnotations']) {
+    for (final key in [
+      'autoScrollMode',
+      'pixelsPerSecond',
+      'showAnnotations',
+    ]) {
       if (settings.containsKey(key) &&
           _articleOverrides[key] != settings[key]) {
         _articleOverrides[key] = settings[key];

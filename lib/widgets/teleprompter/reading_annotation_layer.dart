@@ -144,9 +144,7 @@ class ReadingAnnotationLayout {
     required List<ReadingAnnotation> annotations,
     required this.glyphCache,
     double leadingSpace = 0,
-  }) : leadingSpace = leadingSpace.isFinite
-           ? math.max(0, leadingSpace)
-           : 0 {
+  }) : leadingSpace = leadingSpace.isFinite ? math.max(0, leadingSpace) : 0 {
     if (textLayout.graphemes.isEmpty) return;
     final first = textLayout.graphemes.first.rawStart;
     final last = textLayout.graphemes.last.rawEnd + 1;
@@ -185,7 +183,10 @@ class ReadingAnnotationLayout {
     for (final placement in layout.placementsIn(
       Rect.fromLTWH(0, row.top, layout.width, row.height),
     )) {
-      bottom = math.max(bottom, layout.maximumGlyphBounds(placement, cache).bottom);
+      bottom = math.max(
+        bottom,
+        layout.maximumGlyphBounds(placement, cache).bottom,
+      );
     }
     return math.max(0, layout.height - bottom - _clearance);
   }
@@ -197,9 +198,9 @@ class ReadingAnnotationLayout {
       return cached;
     }
     final row = textLayout.rows[index];
-    final placements = textLayout.placementsIn(
-      Rect.fromLTWH(0, row.top, textLayout.width, row.height),
-    ).toList(growable: false);
+    final placements = textLayout
+        .placementsIn(Rect.fromLTWH(0, row.top, textLayout.width, row.height))
+        .toList(growable: false);
     final bounds = [
       for (final placement in placements)
         textLayout.maximumGlyphBounds(placement, glyphCache),
@@ -229,9 +230,11 @@ class ReadingAnnotationLayout {
         high = middle;
       }
     }
-    for (var index = low - 1;
-        index >= 0 && _prefixEnds[index] > start;
-        index--) {
+    for (
+      var index = low - 1;
+      index >= 0 && _prefixEnds[index] > start;
+      index--
+    ) {
       if (_entries[index].range.end > start) yield _entries[index];
     }
   }
@@ -263,7 +266,8 @@ class ReadingAnnotationLayout {
         final selected = selectedByNote.putIfAbsent(entry.note, () => <int>{});
         for (var i = 0; i < envelope.placements.length; i++) {
           final glyph = envelope.placements[i].grapheme;
-          if (glyph.rawStart < entry.range.end && glyph.rawEnd >= entry.range.start) {
+          if (glyph.rawStart < entry.range.end &&
+              glyph.rawEnd >= entry.range.start) {
             selected.add(i);
           }
         }
@@ -272,7 +276,10 @@ class ReadingAnnotationLayout {
       final fontByFrame = <Rect, double>{};
       for (final entry in selectedByNote.entries) {
         final selected = entry.value.toList()
-          ..sort((a, b) => envelope.bounds[a].left.compareTo(envelope.bounds[b].left));
+          ..sort(
+            (a, b) =>
+                envelope.bounds[a].left.compareTo(envelope.bounds[b].left),
+          );
         Rect? segment;
         var fontSize = 0.0;
         void finish() {
@@ -287,6 +294,7 @@ class ReadingAnnotationLayout {
           (notesByFrame[frame] ??= []).add(entry.key);
           fontByFrame[frame] = math.max(fontByFrame[frame] ?? 0, fontSize);
         }
+
         for (final i in selected) {
           final bounds = envelope.bounds[i];
           if (segment != null && bounds.left > segment.right + .5) {
@@ -297,17 +305,21 @@ class ReadingAnnotationLayout {
           segment = segment?.expandToInclude(bounds) ?? bounds;
           fontSize = math.max(
             fontSize,
-            textLayout.geometry.fontSizeFor(envelope.placements[i].grapheme.format),
+            textLayout.geometry.fontSizeFor(
+              envelope.placements[i].grapheme.format,
+            ),
           );
         }
         finish();
       }
       for (final entry in notesByFrame.entries) {
-        anchors.add(ReadingAnnotationAnchor(
-          frame: entry.key,
-          notes: List.unmodifiable(entry.value),
-          bodyFontSize: fontByFrame[entry.key]!,
-        ));
+        anchors.add(
+          ReadingAnnotationAnchor(
+            frame: entry.key,
+            notes: List.unmodifiable(entry.value),
+            bodyFontSize: fontByFrame[entry.key]!,
+          ),
+        );
       }
       anchors.sort((a, b) => a.frame.left.compareTo(b.frame.left));
     }
@@ -355,14 +367,17 @@ class ReadingAnnotationLayout {
           ? null
           : textLayout.geometry.fontFamily,
     );
-    final lineHeight = glyphCache.painterFor('国', style, TextDirection.ltr).height;
+    final lineHeight = glyphCache
+        .painterFor('国', style, TextDirection.ltr)
+        .height;
     final maxLines = math.min(3, ((band.height - 2.5) / lineHeight).floor());
     if (maxLines < 1) return null;
     final source = anchor.notes.first.text.trim().replaceAll('\r\n', '\n');
     final characters = source.characters;
     final shortened = characters.take(maximumPreviewGraphemes).toString();
     final sourceClipped = shortened.length < source.length;
-    final preview = '$shortened${sourceClipped ? '…' : ''}'
+    final preview =
+        '$shortened${sourceClipped ? '…' : ''}'
         '${anchor.notes.length > 1 ? ' · +${anchor.notes.length - 1}' : ''}';
     final preferredWidth = math.min(textLayout.width * .55, fontSize * 14);
     final tip = anchor.frame.topCenter;
@@ -399,7 +414,9 @@ class ReadingAnnotationLayout {
         painter.height,
       );
       final leaderBounds = Rect.fromPoints(rect.bottomCenter, tip).inflate(.75);
-      final occupiedBounds = rect.expandToInclude(leaderBounds).inflate(_clearance);
+      final occupiedBounds = rect
+          .expandToInclude(leaderBounds)
+          .inflate(_clearance);
       if (rect.left < band.left ||
           rect.right > band.right ||
           rect.top < band.top - .01 ||
@@ -438,7 +455,10 @@ class ReadingAnnotationLayout {
     if (isEmpty || textLayout.rows.isEmpty || clip.isEmpty) return;
     final first = _rowIndex(clip.top);
     // The next row can place a note in this row's unused trailing whitespace.
-    final last = math.min(textLayout.rows.length - 1, _rowIndex(clip.bottom) + 1);
+    final last = math.min(
+      textLayout.rows.length - 1,
+      _rowIndex(clip.bottom) + 1,
+    );
     for (var index = first; index <= last; index++) {
       yield rowAt(index);
     }
@@ -497,21 +517,26 @@ class ReadingAnnotationPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.save();
     canvas.translate(0, layout.leadingSpace);
-    var clip = canvas.getLocalClipBounds().intersect(Rect.fromLTRB(
-      0,
-      -layout.leadingSpace,
-      size.width,
-      layout.textLayout.height,
-    ));
+    var clip = canvas.getLocalClipBounds().intersect(
+      Rect.fromLTRB(
+        0,
+        -layout.leadingSpace,
+        size.width,
+        layout.textLayout.height,
+      ),
+    );
     final controller = scrollController;
     if (layout.textLayout.height > viewportHeight * 2 &&
-        controller != null && controller.hasClients) {
-      clip = clip.intersect(Rect.fromLTWH(
-        0,
-        controller.offset - contentTop - viewportHeight / 2,
-        size.width,
-        viewportHeight * 2,
-      ));
+        controller != null &&
+        controller.hasClients) {
+      clip = clip.intersect(
+        Rect.fromLTWH(
+          0,
+          controller.offset - contentTop - viewportHeight / 2,
+          size.width,
+          viewportHeight * 2,
+        ),
+      );
     }
     canvas.clipRect(clip);
     final paint = Paint()

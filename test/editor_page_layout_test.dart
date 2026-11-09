@@ -16,9 +16,12 @@ class _DelayedArticleProvider extends ArticleProvider {
   final completer = Completer<Article?>();
 
   @override
-  Future<Article?> updateArticle(String id, {List<ReadingAnnotation>? annotations,
-    String? title, String? content}) =>
-      completer.future;
+  Future<Article?> updateArticle(
+    String id, {
+    List<ReadingAnnotation>? annotations,
+    String? title,
+    String? content,
+  }) => completer.future;
 }
 
 void main() {

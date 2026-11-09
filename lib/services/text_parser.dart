@@ -424,7 +424,12 @@ class TextParser {
 
   static String decodeHtmlEntities(String text) {
     const named = {
-      'nbsp': ' ', 'lt': '<', 'gt': '>', 'quot': '"', 'apos': "'", 'amp': '&',
+      'nbsp': ' ',
+      'lt': '<',
+      'gt': '>',
+      'quot': '"',
+      'apos': "'",
+      'amp': '&',
     };
     return text.replaceAllMapped(
       RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|nbsp|lt|gt|quot|apos|amp);'),
@@ -434,8 +439,11 @@ class TextParser {
         final codePoint = value.startsWith('#x')
             ? int.tryParse(value.substring(2), radix: 16)
             : int.tryParse(value.substring(1));
-        if (codePoint == null || codePoint <= 0 || codePoint > 0x10ffff ||
-            (codePoint >= 0xd800 && codePoint <= 0xdfff)) return match.group(0)!;
+        if (codePoint == null ||
+            codePoint <= 0 ||
+            codePoint > 0x10ffff ||
+            (codePoint >= 0xd800 && codePoint <= 0xdfff))
+          return match.group(0)!;
         return String.fromCharCode(codePoint);
       },
     );

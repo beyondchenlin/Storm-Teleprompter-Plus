@@ -24,11 +24,14 @@ class _ReadingLineKey extends GlobalObjectKey<ReadingEmphasisLineState> {
   const _ReadingLineKey(super.value, this.viewport);
 
   @override
-  bool operator ==(Object other) => other is _ReadingLineKey &&
-      identical(value, other.value) && identical(viewport, other.viewport);
+  bool operator ==(Object other) =>
+      other is _ReadingLineKey &&
+      identical(value, other.value) &&
+      identical(viewport, other.viewport);
 
   @override
-  int get hashCode => Object.hash(identityHashCode(value), identityHashCode(viewport));
+  int get hashCode =>
+      Object.hash(identityHashCode(value), identityHashCode(viewport));
 }
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
@@ -186,8 +189,13 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   List<List<ReadingAnnotation>> _lineAnnotations = const [];
   final Map<int, double> _annotationLeadingSpaces = {};
   bool _annotationTapHandled = false;
-  ({ReadingEmphasisLineState state, Offset position, Duration time, int pointer})?
-      _annotationTapCandidate;
+  ({
+    ReadingEmphasisLineState state,
+    Offset position,
+    Duration time,
+    int pointer,
+  })?
+  _annotationTapCandidate;
   bool _annotationPointerMoved = false;
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
@@ -993,91 +1001,91 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
             _annotationTapHandled = false;
           },
           child: ClipRect(
-          child: Transform(
-            alignment: Alignment.center,
-            transform: widget.mirrorMode
-                ? (Matrix4.identity()..setEntry(0, 0, -1.0))
-                : Matrix4.identity(),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: _handleScrollNotification,
-                    child: CustomScrollView(
-                      controller: widget.scrollController,
-                      // 播放中的滚动模式始终由速度控制，零速不能通过拖动改变位置。
-                      physics: widget.continuous && widget.isPlaying
-                          ? const NeverScrollableScrollPhysics()
-                          : widget.physics ?? const ClampingScrollPhysics(),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: _topPad(viewportHeight)),
-                        ),
-                        SliverPadding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: horizontalPadding,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: widget.mirrorMode
+                  ? (Matrix4.identity()..setEntry(0, 0, -1.0))
+                  : Matrix4.identity(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleScrollNotification,
+                      child: CustomScrollView(
+                        controller: widget.scrollController,
+                        // 播放中的滚动模式始终由速度控制，零速不能通过拖动改变位置。
+                        physics: widget.continuous && widget.isPlaying
+                            ? const NeverScrollableScrollPhysics()
+                            : widget.physics ?? const ClampingScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: SizedBox(height: _topPad(viewportHeight)),
                           ),
-                          sliver: widget.lines.isEmpty
-                              ? SliverToBoxAdapter(
-                                  child: Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(
-                                        top: viewportHeight * 0.2,
-                                      ),
-                                      child: const Text(
-                                        '暂无内容',
-                                        style: TextStyle(
-                                          color: AppColors.textDisabled,
-                                          fontSize: 18,
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPadding,
+                            ),
+                            sliver: widget.lines.isEmpty
+                                ? SliverToBoxAdapter(
+                                    child: Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          top: viewportHeight * 0.2,
+                                        ),
+                                        child: const Text(
+                                          '暂无内容',
+                                          style: TextStyle(
+                                            color: AppColors.textDisabled,
+                                            fontSize: 18,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                )
-                              : SliverVariedExtentList(
-                                  itemExtentBuilder: (index, dimensions) =>
-                                      _lineHeights[index],
-                                  delegate: MeasuredLineDelegate(
-                                    (context, index) => _buildLine(
-                                      index,
-                                      textWidth,
-                                      viewportHeight,
+                                  )
+                                : SliverVariedExtentList(
+                                    itemExtentBuilder: (index, dimensions) =>
+                                        _lineHeights[index],
+                                    delegate: MeasuredLineDelegate(
+                                      (context, index) => _buildLine(
+                                        index,
+                                        textWidth,
+                                        viewportHeight,
+                                      ),
+                                      count: widget.lines.length,
+                                      contentHeight: _contentHeight,
                                     ),
-                                    count: widget.lines.length,
-                                    contentHeight: _contentHeight,
                                   ),
-                                ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: _bottomPad(viewportHeight)),
-                        ),
-                      ],
+                          ),
+                          SliverToBoxAdapter(
+                            child: SizedBox(height: _bottomPad(viewportHeight)),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (widget.showReadingFrame && !widget.continuous)
-                  Positioned.fill(
-                    child: AnimatedBuilder(
-                      animation: widget.scrollController,
-                      builder: (context, _) {
-                        final row = debugCurrentRowRect;
-                        return row == null
-                            ? const SizedBox.shrink()
-                            : ReadingAreaFrame(
-                                key: const ValueKey('reading-area-frame'),
-                                row: row,
-                                borderWidth: widget.readingAreaBorderWidth,
-                              );
-                      },
+                  if (widget.showReadingFrame && !widget.continuous)
+                    Positioned.fill(
+                      child: AnimatedBuilder(
+                        animation: widget.scrollController,
+                        builder: (context, _) {
+                          final row = debugCurrentRowRect;
+                          return row == null
+                              ? const SizedBox.shrink()
+                              : ReadingAreaFrame(
+                                  key: const ValueKey('reading-area-frame'),
+                                  row: row,
+                                  borderWidth: widget.readingAreaBorderWidth,
+                                );
+                        },
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
           ),
         );
       },
@@ -1126,21 +1134,36 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         widget.annotations.isEmpty ||
         event.buttons != kPrimaryButton ||
         !widget.scrollController.hasClients ||
-        _lineTops.isEmpty) return;
+        _lineTops.isEmpty)
+      return;
     final render = context.findRenderObject();
     if (render is! RenderBox) return;
     final local = render.globalToLocal(event.position);
-    final contentY = local.dy + widget.scrollController.offset - _lastTopPadding;
+    final contentY =
+        local.dy + widget.scrollController.offset - _lastTopPadding;
     final current = _findLineForContentOffset(contentY);
     // A following line borrows only its immediate predecessor's empty space.
-    for (var index = current; index <= current + 1 && index < widget.lines.length; index++) {
+    for (
+      var index = current;
+      index <= current + 1 && index < widget.lines.length;
+      index++
+    ) {
       final state = _ReadingLineKey(widget.lines[index], this).currentState;
       final box = state?.context.findRenderObject();
-      if (state != null && box is RenderBox &&
-          state.annotationsAt(box.globalToLocal(event.position), labelsOnly: true).isNotEmpty) {
+      if (state != null &&
+          box is RenderBox &&
+          state
+              .annotationsAt(
+                box.globalToLocal(event.position),
+                labelsOnly: true,
+              )
+              .isNotEmpty) {
         _annotationTapHandled = true;
         _annotationTapCandidate = (
-          state: state, position: event.position, time: event.timeStamp, pointer: event.pointer,
+          state: state,
+          position: event.position,
+          time: event.timeStamp,
+          pointer: event.pointer,
         );
         return;
       }
@@ -1149,7 +1172,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   void _handleAnnotationPointerMove(PointerMoveEvent event) {
     final candidate = _annotationTapCandidate;
-    if (candidate != null && candidate.pointer == event.pointer &&
+    if (candidate != null &&
+        candidate.pointer == event.pointer &&
         (event.position - candidate.position).distance > kTouchSlop) {
       _annotationPointerMoved = true;
     }
@@ -1159,8 +1183,10 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     final candidate = _annotationTapCandidate;
     if (candidate == null || candidate.pointer != event.pointer) return;
     _annotationTapCandidate = null;
-    if (_annotationPointerMoved || !candidate.state.mounted ||
-        event.timeStamp - candidate.time >= kLongPressTimeout) return;
+    if (_annotationPointerMoved ||
+        !candidate.state.mounted ||
+        event.timeStamp - candidate.time >= kLongPressTimeout)
+      return;
     final box = candidate.state.context.findRenderObject();
     if (box is RenderBox) {
       candidate.state.openAnnotationLabelAt(box.globalToLocal(event.position));
@@ -1171,14 +1197,18 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   /// update must not scan all notes for every visible line, or dirty metrics.
   void _ensureAnnotationIndex() {
     if (identical(_indexedAnnotationLines, widget.lines) &&
-        identical(_indexedAnnotations, widget.annotations)) return;
+        identical(_indexedAnnotations, widget.annotations))
+      return;
     _indexedAnnotationLines = widget.lines;
     _indexedAnnotations = widget.annotations;
     final nonEmpty = <int>[
       for (var i = 0; i < widget.lines.length; i++)
         if (widget.lines[i].characters.isNotEmpty) i,
     ];
-    final notes = List.generate(widget.lines.length, (_) => <ReadingAnnotation>{});
+    final notes = List.generate(
+      widget.lines.length,
+      (_) => <ReadingAnnotation>{},
+    );
     for (final note in widget.annotations) {
       if (!note.isAnchored) continue;
       for (final range in note.ranges) {
@@ -1218,7 +1248,10 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     // after viewport/reading-line changes; no new padding is ever introduced.
     final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;
     if (index == 0) {
-      return math.min(cap, math.max(0, _topPad(viewportHeight) + _lineVerticalPadding));
+      return math.min(
+        cap,
+        math.max(0, _topPad(viewportHeight) + _lineVerticalPadding),
+      );
     }
     return _annotationLeadingSpaces.putIfAbsent(index, () {
       final previous = widget.lines[index - 1];

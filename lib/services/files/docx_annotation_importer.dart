@@ -13,9 +13,9 @@ import 'import_batch.dart';
 Future<ImportedArticleDraft> importDocx(File file) async {
   final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
   final name = file.path.split(RegExp(r'[\\/]')).last;
-  return _DocxImporter(archive).read(
-    name.replaceFirst(RegExp(r'\.[^.]+$'), '').trim(),
-  );
+  return _DocxImporter(
+    archive,
+  ).read(name.replaceFirst(RegExp(r'\.[^.]+$'), '').trim());
 }
 
 class _DocxImporter {
@@ -154,14 +154,16 @@ class _DocxImporter {
       if (root.name.local != 'comments') {
         throw const FormatException('批注部件不是有效的批注列表');
       }
-      return root.children.whereType<XmlElement>().where(
-        (node) => node.name.local == 'comment',
-      ).map((node) {
-        final buffer = StringBuffer();
-        _appendCommentText(node, buffer);
-        final text = buffer.toString().replaceFirst(RegExp(r'\n$'), '');
-        return _CommentEntry(_commentId(node), text);
-      }).toList();
+      return root.children
+          .whereType<XmlElement>()
+          .where((node) => node.name.local == 'comment')
+          .map((node) {
+            final buffer = StringBuffer();
+            _appendCommentText(node, buffer);
+            final text = buffer.toString().replaceFirst(RegExp(r'\n$'), '');
+            return _CommentEntry(_commentId(node), text);
+          })
+          .toList();
     } on Exception catch (error) {
       _commentsFailure = error is FormatException
           ? error.message.toString()
@@ -184,7 +186,9 @@ class _DocxImporter {
     }
     final decoded = Uri.decodeComponent(uri.path);
     final path = p.posix.normalize(
-      decoded.startsWith('/') ? decoded.substring(1) : p.posix.join('word', decoded),
+      decoded.startsWith('/')
+          ? decoded.substring(1)
+          : p.posix.join('word', decoded),
     );
     if (path == '.' || path == '..' || path.startsWith('../')) return null;
     return path;
@@ -307,7 +311,13 @@ class _DocxImporter {
     if (problems.isEmpty) {
       final start = location!.start!;
       final end = location.end!;
-      ranges.add(AnnotationRange(start: start, end: end, quote: body.substring(start, end)));
+      ranges.add(
+        AnnotationRange(
+          start: start,
+          end: end,
+          quote: body.substring(start, end),
+        ),
+      );
     }
     return ReadingAnnotation(
       id: id,
@@ -409,15 +419,22 @@ class _RunStyle {
       return !const {'0', 'false', 'off', 'none'}.contains(value);
     }
 
-    final halfPoints = int.tryParse(_attribute(_child(properties, 'sz'), 'val') ?? '');
+    final halfPoints = int.tryParse(
+      _attribute(_child(properties, 'sz'), 'val') ?? '',
+    );
     final fill = _validColor(_attribute(_child(properties, 'shd'), 'fill'));
-    final highlight = _attribute(_child(properties, 'highlight'), 'val')?.toLowerCase();
+    final highlight = _attribute(
+      _child(properties, 'highlight'),
+      'val',
+    )?.toLowerCase();
     return _RunStyle(
       bold: enabled('b'),
       italic: enabled('i'),
       underline: enabled('u'),
       strike: enabled('strike') || enabled('dstrike'),
-      fontSizePx: halfPoints == null ? null : ((halfPoints / 2) * 96 / 72).round().clamp(8, 96),
+      fontSizePx: halfPoints == null
+          ? null
+          : ((halfPoints / 2) * 96 / 72).round().clamp(8, 96),
       backgroundHex: fill ?? _highlightColors[highlight],
       textHex: _validColor(_attribute(_child(properties, 'color'), 'val')),
     );
@@ -443,7 +460,8 @@ class _RunStyle {
       if (backgroundHex != null) 'background-color: #$backgroundHex',
       if (textHex != null) 'color: #$textHex',
     ];
-    if (styles.isNotEmpty) html = '<span style="${styles.join('; ')}">$html</span>';
+    if (styles.isNotEmpty)
+      html = '<span style="${styles.join('; ')}">$html</span>';
     return html;
   }
 
@@ -453,9 +471,17 @@ class _RunStyle {
       : null;
 
   static const _highlightColors = {
-    'yellow': 'FFF59D', 'green': 'A5D6A7', 'cyan': '80DEEA',
-    'magenta': 'F48FB1', 'blue': '90CAF9', 'red': 'EF9A9A',
-    'darkyellow': 'FBC02D', 'darkgreen': '388E3C', 'darkcyan': '0097A7',
-    'darkmagenta': 'C2185B', 'darkblue': '1976D2', 'darkred': 'D32F2F',
+    'yellow': 'FFF59D',
+    'green': 'A5D6A7',
+    'cyan': '80DEEA',
+    'magenta': 'F48FB1',
+    'blue': '90CAF9',
+    'red': 'EF9A9A',
+    'darkyellow': 'FBC02D',
+    'darkgreen': '388E3C',
+    'darkcyan': '0097A7',
+    'darkmagenta': 'C2185B',
+    'darkblue': '1976D2',
+    'darkred': 'D32F2F',
   };
 }

@@ -177,7 +177,11 @@ class EditorPageState extends State<EditorPage>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildFormatButton(Icons.add_comment_outlined, '给所选字词添加批注', addAnnotation),
+        _buildFormatButton(
+          Icons.add_comment_outlined,
+          '给所选字词添加批注',
+          addAnnotation,
+        ),
         _buildFormatButton(
           Icons.comment_outlined,
           '批注管理（${annotations.length}）',
@@ -185,7 +189,12 @@ class EditorPageState extends State<EditorPage>
           selected: annotations.isNotEmpty,
         ),
         if (annotations.isNotEmpty)
-          _buildFormatButton(Icons.preview_outlined, '显示或收起批注预览', toggleAnnotationPreview, selected: showAnnotationPreview),
+          _buildFormatButton(
+            Icons.preview_outlined,
+            '显示或收起批注预览',
+            toggleAnnotationPreview,
+            selected: showAnnotationPreview,
+          ),
         _buildFormatButton(Icons.vertical_align_top, '删除空行', removeEmptyLines),
         _buildFormatButton(
           Icons.format_indent_decrease,
@@ -261,30 +270,32 @@ class EditorPageState extends State<EditorPage>
           ),
           Divider(height: 1, color: AppColors.borderLightFor(context)),
           Expanded(
-            child: buildAnnotationWorkspace(quill.QuillEditor.basic(
-              key: quillEditorKey,
-              controller: quillController,
-              focusNode: editorFocusNode,
-              config: quill.QuillEditorConfig(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                placeholder: '请输入稿件正文',
-                expands: true,
-                autoFocus: true,
-                customStyles: quill.DefaultStyles(
-                  paragraph: paragraphStyle,
-                  placeHolder: quill.DefaultTextBlockStyle(
-                    editorTextStyle.copyWith(
-                      color: editorTextColor.withValues(alpha: 0.46),
+            child: buildAnnotationWorkspace(
+              quill.QuillEditor.basic(
+                key: quillEditorKey,
+                controller: quillController,
+                focusNode: editorFocusNode,
+                config: quill.QuillEditorConfig(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                  placeholder: '请输入稿件正文',
+                  expands: true,
+                  autoFocus: true,
+                  customStyles: quill.DefaultStyles(
+                    paragraph: paragraphStyle,
+                    placeHolder: quill.DefaultTextBlockStyle(
+                      editorTextStyle.copyWith(
+                        color: editorTextColor.withValues(alpha: 0.46),
+                      ),
+                      quill.HorizontalSpacing.zero,
+                      quill.VerticalSpacing.zero,
+                      quill.VerticalSpacing.zero,
+                      null,
                     ),
-                    quill.HorizontalSpacing.zero,
-                    quill.VerticalSpacing.zero,
-                    quill.VerticalSpacing.zero,
-                    null,
+                    color: editorTextColor,
                   ),
-                  color: editorTextColor,
                 ),
               ),
-            )),
+            ),
           ),
         ],
       ),

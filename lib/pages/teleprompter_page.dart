@@ -71,7 +71,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   @override
   void initState() {
     super.initState();
-    _readingAnnotations = AnnotationAnchors.validate(widget.article.content, widget.article.annotations);
+    _readingAnnotations = AnnotationAnchors.validate(
+      widget.article.content,
+      widget.article.annotations,
+    );
     HardwareKeyboard.instance.addHandler(_handleGlobalShortcutKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isTextInputFocused()) return;
@@ -627,13 +630,20 @@ class _TeleprompterPageState extends State<TeleprompterPage>
               ),
               if (_readingAnnotations.isNotEmpty)
                 Tooltip(
-                  message: settings.showAnnotations ? '隐藏批注，正文位置保持不变' : '显示朗读批注',
+                  message: settings.showAnnotations
+                      ? '隐藏批注，正文位置保持不变'
+                      : '显示朗读批注',
                   child: TextButton.icon(
                     key: const ValueKey('toggle-reading-annotations'),
-                    onPressed: () => context.read<SettingsProvider>()
+                    onPressed: () => context
+                        .read<SettingsProvider>()
                         .setShowAnnotations(!settings.showAnnotations),
-                    icon: Icon(settings.showAnnotations
-                        ? Icons.comment_outlined : Icons.speaker_notes_off_outlined, size: 17),
+                    icon: Icon(
+                      settings.showAnnotations
+                          ? Icons.comment_outlined
+                          : Icons.speaker_notes_off_outlined,
+                      size: 17,
+                    ),
                     label: Text(settings.showAnnotations ? '批注：开' : '批注：关'),
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xff8bcfc9),

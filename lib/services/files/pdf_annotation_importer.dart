@@ -15,6 +15,7 @@ class PdfImportException implements Exception {
   const PdfImportException(this.message, {this.nativeCode});
 
   final String message;
+
   /// Preserved for diagnostics; never infer a password error from an unknown
   /// code or from a search for an /Encrypt token in arbitrary file bytes.
   final int? nativeCode;
@@ -35,7 +36,10 @@ Future<ImportedArticleDraft> importPdf(File file) {
     (_) => Isolate.run(() => _importPdfInWorker(path)),
   );
   // A failed file must not prevent the next queued import from running.
-  _pdfImportQueue = task.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+  _pdfImportQueue = task.then<void>(
+    (_) {},
+    onError: (Object _, StackTrace __) {},
+  );
   return task;
 }
 
@@ -81,7 +85,10 @@ ImportedArticleDraft _importPdfInWorker(String path) {
     );
     final loadError = pdfium.FPDF_GetLastError();
     if (document == nullptr) {
-      throw PdfImportException(_documentError(loadError), nativeCode: loadError);
+      throw PdfImportException(
+        _documentError(loadError),
+        nativeCode: loadError,
+      );
     }
     try {
       // Bit 5 is the document's copy/extract permission. Unencrypted documents
@@ -105,8 +112,9 @@ String _documentError(int code) => switch (code) {
   4 => '文件已加密，需要先在原软件中输入密码并另存为可读取的文件。',
   5 => '文件采用了不支持的加密保护，请在原软件中解除保护后再导入。',
   6 => '文档页面无法解析，请在原软件中重新保存后再导入。',
-  _ => '文档解析失败，解析组件未提供可识别的原因。请检查文件是否需要密码或已经损坏，'
-      '并在原软件中重新保存后再导入。',
+  _ =>
+    '文档解析失败，解析组件未提供可识别的原因。请检查文件是否需要密码或已经损坏，'
+        '并在原软件中重新保存后再导入。',
 };
 
 ImportedArticleDraft _readDocument(
@@ -145,9 +153,7 @@ ImportedArticleDraft _readDocument(
   var emptyComments = 0;
   for (final page in pages) {
     if (!page.hasVisibleText) {
-      warnings.add(
-        '第 ${page.number} 页没有可提取的正文文字（扫描页、空白页或缺少文字层）；该页备注仍会保留。',
-      );
+      warnings.add('第 ${page.number} 页没有可提取的正文文字（扫描页、空白页或缺少文字层）；该页备注仍会保留。');
     }
     if (page.undecodableCharacters > 0) {
       warnings.add(
@@ -173,7 +179,8 @@ ImportedArticleDraft _readDocument(
           glyphs: page.glyphs,
           quads: note.quads,
         );
-      } else if (note.parentIndex != null && byIndex[note.parentIndex] != null) {
+      } else if (note.parentIndex != null &&
+          byIndex[note.parentIndex] != null) {
         result = resolve(byIndex[note.parentIndex]!, visiting);
       } else {
         result = PdfAnnotationMatch(
@@ -258,7 +265,11 @@ _ParsedPage _readPage(
         var previousWasCarriageReturn = false;
         for (var index = 0; index < characterCount; index++) {
           final code = pdfium.FPDFText_GetUnicode(textPage, index);
-          if (code == 13 || code == 10 || code == 12 || code == 0x2028 || code == 0x2029) {
+          if (code == 13 ||
+              code == 10 ||
+              code == 12 ||
+              code == 0x2028 ||
+              code == 0x2029) {
             if (code != 10 || !previousWasCarriageReturn) builder.lineBreak();
             previousWasCarriageReturn = code == 13;
             continue;
@@ -321,7 +332,8 @@ _ParsedPage _readPage(
         using((arena) {
           final quad = arena<FS_QUADPOINTSF>();
           for (var quadIndex = 0; quadIndex < quadCount; quadIndex++) {
-            if (pdfium.FPDFAnnot_GetAttachmentPoints(annot, quadIndex, quad) == 0) {
+            if (pdfium.FPDFAnnot_GetAttachmentPoints(annot, quadIndex, quad) ==
+                0) {
               // A deliberately invalid quad makes the whole note unresolved.
               quads.add(const PdfTextQuad([]));
               continue;

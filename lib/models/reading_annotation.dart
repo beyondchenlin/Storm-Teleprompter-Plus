@@ -11,23 +11,17 @@ class AnnotationRange {
     required this.quote,
   });
 
-  factory AnnotationRange.fromJson(Map<String, dynamic> json) => AnnotationRange(
-    start: (json['start'] as num?)?.toInt() ?? -1,
-    end: (json['end'] as num?)?.toInt() ?? -1,
-    quote: json['quote'] as String? ?? '',
-  );
+  factory AnnotationRange.fromJson(Map<String, dynamic> json) =>
+      AnnotationRange(
+        start: (json['start'] as num?)?.toInt() ?? -1,
+        end: (json['end'] as num?)?.toInt() ?? -1,
+        quote: json['quote'] as String? ?? '',
+      );
 
-  Map<String, dynamic> toJson() => {
-    'start': start,
-    'end': end,
-    'quote': quote,
-  };
+  Map<String, dynamic> toJson() => {'start': start, 'end': end, 'quote': quote};
 
-  AnnotationRange shifted(int delta) => AnnotationRange(
-    start: start + delta,
-    end: end + delta,
-    quote: quote,
-  );
+  AnnotationRange shifted(int delta) =>
+      AnnotationRange(start: start + delta, end: end + delta, quote: quote);
 }
 
 /// Coaching notes are stored separately from body text and speech alignment.
@@ -57,9 +51,8 @@ class ReadingAnnotation {
         text: json['text'] as String? ?? '',
         ranges: List.unmodifiable(
           (json['ranges'] as List? ?? const []).whereType<Map>().map(
-            (range) => AnnotationRange.fromJson(
-              Map<String, dynamic>.from(range),
-            ),
+            (range) =>
+                AnnotationRange.fromJson(Map<String, dynamic>.from(range)),
           ),
         ),
         source: json['source'] as String? ?? 'manual',

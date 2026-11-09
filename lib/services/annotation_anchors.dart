@@ -35,11 +35,13 @@ class AnnotationAnchors {
   ) {
     if (notes.isEmpty) return const [];
     final body = bodyText(content);
-    return List.unmodifiable(notes.map((note) {
-      if (!note.isAnchored) return note;
-      if (note.ranges.every((range) => matches(body, range))) return note;
-      return note.copyWith(unresolvedReason: '原文已变更，请重新选择对应字词');
-    }));
+    return List.unmodifiable(
+      notes.map((note) {
+        if (!note.isAnchored) return note;
+        if (note.ranges.every((range) => matches(body, range))) return note;
+        return note.copyWith(unresolvedReason: '原文已变更，请重新选择对应字词');
+      }),
+    );
   }
 
   /// Remap one editor operation through its unchanged prefix and suffix.
@@ -74,28 +76,31 @@ class AnnotationAnchors {
     final ambiguous = prefix + suffix > shorter;
     final editStart = ambiguous ? shorter - suffix : prefix;
     final oldEnd = ambiguous
-        ? prefix + (before.length > after.length ? before.length - after.length : 0)
+        ? prefix +
+              (before.length > after.length ? before.length - after.length : 0)
         : before.length - suffix;
     final delta = after.length - before.length;
-    return List.unmodifiable(notes.map((note) {
-      if (!note.isAnchored) return note;
-      final moved = <AnnotationRange>[];
-      for (final range in note.ranges) {
-        if (!matches(before, range)) {
-          return note.copyWith(unresolvedReason: '原文范围已失效，请重新选择字词');
+    return List.unmodifiable(
+      notes.map((note) {
+        if (!note.isAnchored) return note;
+        final moved = <AnnotationRange>[];
+        for (final range in note.ranges) {
+          if (!matches(before, range)) {
+            return note.copyWith(unresolvedReason: '原文范围已失效，请重新选择字词');
+          }
+          if (range.end <= editStart) {
+            moved.add(range);
+          } else if (range.start >= oldEnd) {
+            moved.add(range.shifted(delta));
+          } else {
+            return note.copyWith(unresolvedReason: '批注对应的字词已编辑，请重新定位');
+          }
         }
-        if (range.end <= editStart) {
-          moved.add(range);
-        } else if (range.start >= oldEnd) {
-          moved.add(range.shifted(delta));
-        } else {
-          return note.copyWith(unresolvedReason: '批注对应的字词已编辑，请重新定位');
+        if (!moved.every((range) => matches(after, range))) {
+          return note.copyWith(unresolvedReason: '正文变更后无法确认范围，请重新定位');
         }
-      }
-      if (!moved.every((range) => matches(after, range))) {
-        return note.copyWith(unresolvedReason: '正文变更后无法确认范围，请重新定位');
-      }
-      return note.copyWith(ranges: moved);
-    }));
+        return note.copyWith(ranges: moved);
+      }),
+    );
   }
 }

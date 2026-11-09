@@ -598,8 +598,12 @@ class ArticleService {
     List<ReadingAnnotation> annotations = const [],
     String? folderId,
   }) => _mutate(
-    () => _createArticle(title: title, content: content,
-        annotations: annotations, folderId: folderId),
+    () => _createArticle(
+      title: title,
+      content: content,
+      annotations: annotations,
+      folderId: folderId,
+    ),
   );
 
   Future<Article> _createArticle({
@@ -658,8 +662,12 @@ class ArticleService {
     final nextAnnotations = annotations != null
         ? AnnotationAnchors.validate(nextContent, annotations)
         : content == null
-            ? previous.annotations
-            : AnnotationAnchors.remap(previous.content, nextContent, previous.annotations);
+        ? previous.annotations
+        : AnnotationAnchors.remap(
+            previous.content,
+            nextContent,
+            previous.annotations,
+          );
     final updated = previous.copyWith(
       title: title,
       content: content,

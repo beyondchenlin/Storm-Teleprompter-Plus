@@ -8,7 +8,9 @@ mixin EditorLogic on State<EditorPage> {
   late final TextEditingController replaceController;
   late final quill.QuillController quillController;
   late final FocusNode editorFocusNode;
-  final GlobalKey quillEditorKey = GlobalKey(debugLabel: 'PersistentArticleEditor');
+  final GlobalKey quillEditorKey = GlobalKey(
+    debugLabel: 'PersistentArticleEditor',
+  );
   late final FocusNode findFocusNode;
   late ArticleProvider _articleProvider;
 
@@ -51,7 +53,8 @@ mixin EditorLogic on State<EditorPage> {
     super.initState();
     _savedArticle = widget.article;
     _annotations = AnnotationAnchors.validate(
-      widget.article?.content ?? '', widget.article?.annotations ?? const [],
+      widget.article?.content ?? '',
+      widget.article?.annotations ?? const [],
     );
     _saveFolderId = widget.initialFolderId;
     titleController = TextEditingController(text: widget.article?.title ?? '');
@@ -120,7 +123,11 @@ mixin EditorLogic on State<EditorPage> {
       return;
     }
 
-    _annotations = AnnotationAnchors.remap(contentController.text, html, _annotations);
+    _annotations = AnnotationAnchors.remap(
+      contentController.text,
+      html,
+      _annotations,
+    );
     _syncingEditorContent = true;
     contentController.value = TextEditingValue(
       text: html,
@@ -233,7 +240,10 @@ mixin EditorLogic on State<EditorPage> {
       content: contentController.text.trim(),
       visibleCharacterCount: TextParser.visibleCharacterCount(plainText),
       revision: _editRevision,
-      annotations: AnnotationAnchors.validate(contentController.text, _annotations),
+      annotations: AnnotationAnchors.validate(
+        contentController.text,
+        _annotations,
+      ),
     );
   }
 
@@ -448,7 +458,11 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   void _replaceEditorHtml(String html) {
-    _annotations = AnnotationAnchors.remap(contentController.text, html, _annotations);
+    _annotations = AnnotationAnchors.remap(
+      contentController.text,
+      html,
+      _annotations,
+    );
     _syncingEditorContent = true;
     quillController.document = quill.Document.fromDelta(_contentToDelta(html));
     contentController.value = TextEditingValue(

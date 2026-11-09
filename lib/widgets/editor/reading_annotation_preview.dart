@@ -29,7 +29,8 @@ class ReadingAnnotationPreview extends StatefulWidget {
   });
 
   @override
-  State<ReadingAnnotationPreview> createState() => _ReadingAnnotationPreviewState();
+  State<ReadingAnnotationPreview> createState() =>
+      _ReadingAnnotationPreviewState();
 }
 
 class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
@@ -77,7 +78,9 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
     }
     if (source == null) return null;
     final columns = (width / (_fontSize * readingEmphasisMaximumScale * 1.08))
-        .floor().clamp(2, 28).toInt();
+        .floor()
+        .clamp(2, 28)
+        .toInt();
     final key = (source, focus, columns);
     if (_excerptKey == key) return _excerpt;
     _excerptKey = key;
@@ -85,7 +88,9 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
     var localFocus = 0;
     for (final char in source.characters) {
       if (focus < char.rawIndex + char.char.length) {
-        localFocus += (focus - char.rawIndex).clamp(0, char.char.length).toInt();
+        localFocus += (focus - char.rawIndex)
+            .clamp(0, char.char.length)
+            .toInt();
         break;
       }
       localFocus += char.char.length;
@@ -116,18 +121,22 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
         // correct raw offset for legacy callers that provide a whole run.
         final from = math.max(0, start - offset);
         final to = math.min(char.char.length, end - offset);
-        characters.add(from == 0 && to == char.char.length ? char : ScriptCharacter(
-          char: char.char.substring(from, to),
-          rawIndex: char.rawIndex + from,
-          bold: char.bold,
-          italic: char.italic,
-          underline: char.underline,
-          strikeThrough: char.strikeThrough,
-          fontSizeRatio: char.fontSizeRatio,
-          fontSizePx: char.fontSizePx,
-          backgroundColor: char.backgroundColor,
-          textColor: char.textColor,
-        ));
+        characters.add(
+          from == 0 && to == char.char.length
+              ? char
+              : ScriptCharacter(
+                  char: char.char.substring(from, to),
+                  rawIndex: char.rawIndex + from,
+                  bold: char.bold,
+                  italic: char.italic,
+                  underline: char.underline,
+                  strikeThrough: char.strikeThrough,
+                  fontSizeRatio: char.fontSizeRatio,
+                  fontSizePx: char.fontSizePx,
+                  backgroundColor: char.backgroundColor,
+                  textColor: char.textColor,
+                ),
+        );
       }
       offset = next;
     }
@@ -137,7 +146,9 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       paragraph: source.paragraph,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scrollController.hasClients && _scrollController.offset != 0) {
+      if (mounted &&
+          _scrollController.hasClients &&
+          _scrollController.offset != 0) {
         _scrollController.jumpTo(0);
       }
     });
@@ -158,7 +169,8 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    if (event.pointer == _activePointer && _pointerStartPosition != null &&
+    if (event.pointer == _activePointer &&
+        _pointerStartPosition != null &&
         (event.position - _pointerStartPosition!).distance > kTouchSlop) {
       _pointerMoved = true;
     }
@@ -174,8 +186,12 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
   void _onPointerUp(PointerUpEvent event) {
     if (event.pointer != _activePointer) return;
     _activePointer = null;
-    if (!_primaryPointer || _pointerMoved || _noteOpened || _pointerStarted == null ||
-        event.timeStamp - _pointerStarted! >= kLongPressTimeout) return;
+    if (!_primaryPointer ||
+        _pointerMoved ||
+        _noteOpened ||
+        _pointerStarted == null ||
+        event.timeStamp - _pointerStarted! >= kLongPressTimeout)
+      return;
     final state = _lineKey.currentState;
     final box = state?.context.findRenderObject();
     if (state != null && box is RenderBox) {
@@ -193,9 +209,15 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
       _excerptKey = null;
     }
     final focus = _focus();
-    final focusedNotes = widget.annotations.where((note) =>
-        note.isAnchored && note.ranges.any((range) =>
-          range.start <= focus && focus < range.end)).toList(growable: false);
+    final focusedNotes = widget.annotations
+        .where(
+          (note) =>
+              note.isAnchored &&
+              note.ranges.any(
+                (range) => range.start <= focus && focus < range.end,
+              ),
+        )
+        .toList(growable: false);
     return SizedBox(
       height: widget.height,
       width: double.infinity,
@@ -209,45 +231,54 @@ class _ReadingAnnotationPreviewState extends State<ReadingAnnotationPreview> {
             onPointerMove: _onPointerMove,
             onPointerCancel: _onPointerCancel,
             onPointerUp: _onPointerUp,
-            child: LayoutBuilder(builder: (context, constraints) {
-              final width = math.max(1.0, constraints.maxWidth - 32);
-              final excerpt = _excerptFor(focus, width);
-              if (excerpt == null || excerpt.characters.isEmpty) {
-                return const Center(child: Text(
-                  '选择正文中的字词后，在这里预览批注效果',
-                  style: TextStyle(color: Color(0xFFA7B4B4), fontSize: 13),
-                ));
-              }
-              return Semantics(
-                label: '批注效果局部预览，点击标记字词或备注编辑',
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(16, _topSpace, 16, 20),
-                  child: ReadingEmphasisLine(
-                    key: _lineKey,
-                    line: excerpt,
-                    geometry: const ReadingTextGeometry(fontSize: _fontSize, lineHeight: 1.8),
-                    presentation: ReadingTextPresentation(
-                      currentIndex: focusedNotes.isEmpty ? -1 : focus,
-                      currentCharScale: 1,
-                      currentCharColor: 0xFFFFE36C,
-                      textColor: 0xFFFFFFFF,
-                      grayReadChars: false,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = math.max(1.0, constraints.maxWidth - 32);
+                final excerpt = _excerptFor(focus, width);
+                if (excerpt == null || excerpt.characters.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      '选择正文中的字词后，在这里预览批注效果',
+                      style: TextStyle(color: Color(0xFFA7B4B4), fontSize: 13),
                     ),
-                    glyphCache: _glyphCache,
-                    width: width,
-                    direction: TextDirection.ltr,
-                    annotations: focusedNotes,
-                    annotationLeadingSpace: _topSpace - 4,
-                    handleAnnotationLabelTaps: false,
-                    onAnnotationsTap: widget.onNoteTap == null ? null : (notes) {
-                      _noteOpened = true;
-                      widget.onNoteTap!(notes.first);
-                    },
+                  );
+                }
+                return Semantics(
+                  label: '批注效果局部预览，点击标记字词或备注编辑',
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, _topSpace, 16, 20),
+                    child: ReadingEmphasisLine(
+                      key: _lineKey,
+                      line: excerpt,
+                      geometry: const ReadingTextGeometry(
+                        fontSize: _fontSize,
+                        lineHeight: 1.8,
+                      ),
+                      presentation: ReadingTextPresentation(
+                        currentIndex: focusedNotes.isEmpty ? -1 : focus,
+                        currentCharScale: 1,
+                        currentCharColor: 0xFFFFE36C,
+                        textColor: 0xFFFFFFFF,
+                        grayReadChars: false,
+                      ),
+                      glyphCache: _glyphCache,
+                      width: width,
+                      direction: TextDirection.ltr,
+                      annotations: focusedNotes,
+                      annotationLeadingSpace: _topSpace - 4,
+                      handleAnnotationLabelTaps: false,
+                      onAnnotationsTap: widget.onNoteTap == null
+                          ? null
+                          : (notes) {
+                              _noteOpened = true;
+                              widget.onNoteTap!(notes.first);
+                            },
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           ),
         ),
       ),
