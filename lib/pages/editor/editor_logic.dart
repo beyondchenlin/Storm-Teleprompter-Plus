@@ -41,6 +41,7 @@ mixin EditorLogic on State<EditorPage> {
   bool _annotationFontNotice = false;
   String? _saveFolderId;
   bool _discardOnDispose = false;
+  bool _disposingEditor = false;
 
   /// 普通模式始终自动保存，快速模式由启动时策略决定。
   bool get autoSaveEnabled => !widget.quickMode || widget.autoSave;
@@ -194,6 +195,7 @@ mixin EditorLogic on State<EditorPage> {
 
   @override
   void dispose() {
+    _disposingEditor = true;
     _autosaveTimer?.cancel();
     titleController.removeListener(_markChanged);
     quillController.removeListener(_onQuillContentChanged);
@@ -419,7 +421,7 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   void _markChanged() {
-    if (!mounted) return;
+    if (!mounted || _disposingEditor) return;
     _lastSaveFailed = false;
     _discardOnDispose = false;
     _editRevision++;
@@ -460,7 +462,7 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   Future<Article?> _runSave(_EditorDraft initialDraft) async {
-    if (mounted) setState(() {
+    if (mounted && !_disposingEditor) setState(() {
       isSaving = true;
       _lastSaveFailed = false;
     });
@@ -472,7 +474,7 @@ mixin EditorLogic on State<EditorPage> {
         if (_savedArticle == null &&
             draft.visibleCharacterCount == 0 &&
             draft.title.trim().isEmpty) {
-          if (mounted) setState(() => isDirty = false);
+          if (mounted && !_disposingEditor) setState(() => isDirty = false);
           return _savedArticle;
         }
 
@@ -498,7 +500,7 @@ mixin EditorLogic on State<EditorPage> {
         }
 
         if (savedArticle == null) {
-          if (mounted) setState(() {
+          if (mounted && !_disposingEditor) setState(() {
             isDirty = true;
             _lastSaveFailed = true;
           });
@@ -507,7 +509,7 @@ mixin EditorLogic on State<EditorPage> {
         _savedArticle = savedArticle;
         final queuedDraft = _queuedDraft;
         if (queuedDraft == null) {
-          if (mounted && _editRevision == draft.revision) {
+          if (mounted && !_disposingEditor && _editRevision == draft.revision) {
             setState(() => isDirty = false);
           }
           return _savedArticle;
@@ -516,13 +518,13 @@ mixin EditorLogic on State<EditorPage> {
       }
     } catch (e) {
       debugPrint('[Editor] autosave failed: $e');
-      if (mounted) setState(() {
+      if (mounted && !_disposingEditor) setState(() {
         isDirty = true;
         _lastSaveFailed = true;
       });
       return null;
     } finally {
-      if (mounted) setState(() => isSaving = false);
+      if (mounted && !_disposingEditor) setState(() => isSaving = false);
     }
   }
 

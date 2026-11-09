@@ -89,13 +89,13 @@ class SettingsPage extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.palette_outlined),
                     title: const Text('批注字体、字号和颜色'),
-                    subtitle: const Text('用于新稿件；已有稿件保留自己的外观设置'),
+                    subtitle: const Text('未单独设置的稿件使用；可在稿件内调整自己的外观'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {
                       final next = await ReadingAnnotationAppearanceDialog.show(
                         context,
                         initialSettings: provider.settings,
-                        scopeLabel: '新稿件的默认外观',
+                        scopeLabel: '默认外观 · 未单独设置的稿件使用',
                       );
                       if (!context.mounted || next == null) return;
                       try {

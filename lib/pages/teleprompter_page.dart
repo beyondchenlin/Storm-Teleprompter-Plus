@@ -93,7 +93,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   bool _handleGlobalShortcutKey(KeyEvent event) {
-    if (!mounted || _isTextInputFocused()) {
+    if (event is KeyUpEvent && _isPauseShortcut(event)) {
+      _pauseShortcutPressed = false;
+    }
+    if (!mounted || !_isCurrentShortcutRoute || _isTextInputFocused()) {
       return false;
     }
 
@@ -151,7 +154,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
           child: CallbackShortcuts(
             bindings: {
               const SingleActivator(LogicalKeyboardKey.escape): () {
-                if (_isTextInputFocused()) return;
+                if (!_isCurrentShortcutRoute || _isTextInputFocused()) return;
                 unawaited(_requestExitTeleprompter(context));
               },
             },
@@ -289,6 +292,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   KeyEventResult _handleTeleprompterKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_isCurrentShortcutRoute) return KeyEventResult.ignored;
     if (event is! KeyDownEvent &&
         event is! KeyRepeatEvent &&
         event is! KeyUpEvent) {
@@ -391,6 +395,8 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     return false;
   }
 
+  bool get _isCurrentShortcutRoute => ModalRoute.of(context)?.isCurrent ?? false;
+
   bool _isPauseShortcut(KeyEvent event) {
     return event.logicalKey == LogicalKeyboardKey.space ||
         event.physicalKey == PhysicalKeyboardKey.space ||
@@ -398,6 +404,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   bool _handlePauseShortcutEvent(KeyEvent event) {
+    if (!_isCurrentShortcutRoute) return false;
     if (!_isPauseShortcut(event)) return false;
 
     if (event is KeyUpEvent) {
@@ -1447,7 +1454,11 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         currentCharColor: settings.currentCharColor,
         readCharColor: settings.readCharColor,
         currentCharScale: settings.currentCharScale,
-        textColor: settings.textColor,
+        textColor: settings.textColor == 0
+            ? ThemeData.estimateBrightnessForColor(Color(settings.teleprompterBgColor)) == Brightness.dark
+                ? 0xFFFFFFFF
+                : 0xFF000000
+            : settings.textColor,
         letterSpacing: settings.letterSpacing,
         highlightCurrentChar: settings.highlightCurrentChar,
         defaultBold: settings.defaultBold,

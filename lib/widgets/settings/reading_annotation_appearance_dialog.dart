@@ -238,7 +238,7 @@ class _ReadingAnnotationAppearanceDialogState
         widget.annotations.any((note) => note.isAnchored);
     var focus = widget.focusRawIndex;
     if (hasNotes && !widget.annotations.any((note) => note.isAnchored &&
-        note.ranges.any((range) => focus != null && range.start <= focus! && focus! < range.end))) {
+        note.ranges.any((range) => focus != null && range.start <= focus && focus < range.end))) {
       final notes = widget.annotations.where((note) => note.isAnchored).toList();
       focus = (notes.where((note) => note.ranges.first.start >= (focus ?? 0)).firstOrNull ??
           notes.first).ranges.first.start;

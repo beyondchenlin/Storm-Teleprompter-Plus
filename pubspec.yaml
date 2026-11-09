@@ -1,7 +1,7 @@
 name: storm_teleprompter_plus
 description: "BK 提词器 - 智能提词器应用"
 publish_to: 'none'
-version: 1.7.5+7
+version: 1.7.6+8
 
 environment:
   sdk: ^3.12.1
