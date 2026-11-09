@@ -7,9 +7,9 @@ import 'app_settings.dart';
 /// ReadingTextGeometry prevents an appearance adjustment from reflowing text.
 @immutable
 class ReadingAnnotationStyle {
-  static const defaultColor = 0xFF8BD1D0;
-  static const minimumFontSize = 8.0;
-  static const maximumFontSize = 36.0;
+  static const defaultColor = AppSettings.defaultAnnotationColor;
+  static const minimumFontSize = AppSettings.minAnnotationFontSize;
+  static const maximumFontSize = AppSettings.maxAnnotationFontSize;
 
   /// Empty follows the manuscript body font, including platform fallback.
   final String fontFamily;
