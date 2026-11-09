@@ -4,6 +4,10 @@ part of '../editor_page.dart';
 mixin EditorQuickMode on State<EditorPage>, EditorLogic {
   final _leaveAction = SingleFlightAction<bool>();
   final _manualSaveAction = SingleFlightAction<bool>();
+  bool _routeExitApproved = false;
+
+  bool get canLeaveRoute => _routeExitApproved || !widget.isActive ||
+      (!widget.quickMode && !isDirty && !isSaving);
 
   /// 显式保存允许选择位置，已有稿件复用原记录而不是创建副本。
   Future<bool> manualSave() => _manualSaveAction.run(_manualSave);
@@ -91,6 +95,7 @@ mixin EditorQuickMode on State<EditorPage>, EditorLogic {
       return;
     }
     if (!await confirmLeave() || !mounted) return;
+    setState(() => _routeExitApproved = true);
     Navigator.of(context).pop();
   }
 }

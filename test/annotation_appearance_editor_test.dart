@@ -142,6 +142,37 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('普通稿件保存失败时系统返回不会丢弃当前正文或外观', (tester) async {
+    final article = _article();
+    final articles = QuickTestArticles()..upsertArticle(article);
+    await mountQuickWorkspace(tester, Builder(builder: (context) => Scaffold(
+      body: TextButton(onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => EditorPage(article: article)),
+      ), child: const Text('编辑')),
+    )), articles, QuickTestSettings());
+    await tester.tap(find.text('编辑'));
+    await _settle(tester);
+    final editor = quickEditor(tester);
+    editor.quillController.replaceText(0, 0, '未存', const TextSelection.collapsed(offset: 2));
+    editor.applyAnnotationAppearance(editor.annotationPreviewSettings.copyWith(annotationFontSize: 20));
+    articles.fail = true;
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPage), findsOneWidget);
+    expect(find.text('保存稿件？'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(editor.contentController.text, contains('未存'));
+    expect(editor.annotationPreviewSettings.annotationFontSize, 20);
+    expect(articles.articles.single.content, article.content);
+    articles.fail = false;
+    await editor.requestExit();
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPage), findsNothing);
+    expect(articles.articles.single.teleprompterSettings!['annotationFontSize'], 20);
+    await _unmount(tester);
+  });
+
   testWidgets('无批注当前字也能预览邻近备注，窄窗口恢复默认只改外观', (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1;

@@ -75,7 +75,7 @@ class EditorPageState extends State<EditorPage>
     // own manuscript snapshot rather than borrowing another playback session.
     context.watch<SettingsProvider>();
     return PopScope(
-      canPop: !widget.quickMode || !widget.isActive,
+      canPop: canLeaveRoute,
       onPopInvokedWithResult: (didPop, _) {
         if (!widget.isActive) return;
         if (didPop) {
