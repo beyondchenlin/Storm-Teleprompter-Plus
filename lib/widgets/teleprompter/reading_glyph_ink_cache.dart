@@ -110,7 +110,7 @@ class ReadingGlyphInkCache extends ChangeNotifier {
     TextPainter painter,
   ) {
     if (_disposed) return null;
-    // Underlined/struck-through spaces contain real ink and must be measured.
+    // Native shaping determines whether decorated whitespace has visible ink.
     if (text.isEmpty ||
         (text.trim().isEmpty &&
             (style.decoration == null ||
@@ -254,9 +254,11 @@ class ReadingGlyphInkCache extends ChangeNotifier {
           ).inflate(boundsTolerance);
         }
       }
-      _remember(job.key, result);
+      _remember(job.key, result, completedMeasurement: true);
     } catch (_) {
-      if (!_disposed) _remember(job.key, null);
+      if (!_disposed) {
+        _remember(job.key, null, completedMeasurement: true);
+      }
     } finally {
       if (image != null) {
         image.dispose();
@@ -278,12 +280,19 @@ class ReadingGlyphInkCache extends ChangeNotifier {
     _livePictures--;
   }
 
-  void _remember(_InkKey key, Rect? bounds) {
+  void _remember(
+    _InkKey key,
+    Rect? bounds, {
+    bool completedMeasurement = false,
+  }) {
     if (_disposed) return;
     _cache.remove(key);
     if (_cache.length >= capacity) _cache.remove(_cache.keys.first);
     _cache[key] = bounds;
-    if (bounds == null) return;
+    // Completing native work also frees a slot. Even a failed capture must
+    // wake callers whose other visible glyphs were rejected by pendingLimit.
+    // A synchronous known-size rejection frees no slot and needs no repaint.
+    if (bounds == null && !completedMeasurement) return;
     _revision++;
     if (_notificationScheduled) return;
     _notificationScheduled = true;

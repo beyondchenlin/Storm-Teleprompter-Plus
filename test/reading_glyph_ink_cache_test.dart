@@ -169,7 +169,7 @@ void main() {
     });
   });
 
-  testWidgets('空白返回零框，有下划线的空格仍保留实际装饰墨迹', (tester) async {
+  testWidgets('空白返回零框，装饰空格按真实采样结果决定墨迹范围', (tester) async {
     await tester.runAsync(() async {
       await _loadFixtureFont();
       final cache = ReadingGlyphInkCache();
@@ -189,20 +189,26 @@ void main() {
           cache.boundsFor(' ', decoratedStyle, TextDirection.ltr, decorated),
           isNull,
         );
+        expect(cache.debugPendingCount, 1);
         await cache.settled;
+        expect(cache.revision, 1);
         final bounds = cache.boundsFor(
           ' ',
           decoratedStyle,
           TextDirection.ltr,
           decorated,
         )!;
-        expect(bounds.isEmpty, isFalse);
         final actual = await _actualInk(decorated);
-        expect(actual.isEmpty, isFalse);
-        expect(bounds.left, lessThanOrEqualTo(actual.left));
-        expect(bounds.right, greaterThanOrEqualTo(actual.right));
-        expect(bounds.top, lessThanOrEqualTo(actual.top));
-        expect(bounds.bottom, greaterThanOrEqualTo(actual.bottom));
+        if (actual.isEmpty) {
+          // Native shaping can omit decoration on trailing whitespace.
+          expect(bounds, Rect.zero);
+        } else {
+          expect(bounds.isEmpty, isFalse);
+          expect(bounds.left, lessThanOrEqualTo(actual.left));
+          expect(bounds.right, greaterThanOrEqualTo(actual.right));
+          expect(bounds.top, lessThanOrEqualTo(actual.top));
+          expect(bounds.bottom, greaterThanOrEqualTo(actual.bottom));
+        }
       } finally {
         blank.dispose();
         decorated.dispose();
@@ -257,6 +263,45 @@ void main() {
         for (final painter in painters.values) {
           painter.dispose();
         }
+        cache.dispose();
+        await cache.settled;
+      }
+    });
+  });
+
+  testWidgets('触边失败仍通知腾出的名额，受限流正常字形可以继续测量', (tester) async {
+    await tester.runAsync(() async {
+      await _loadFixtureFont();
+      final cache = ReadingGlyphInkCache(pendingLimit: 1, concurrency: 1);
+      final clippedStyle = _style.copyWith(
+        decoration: TextDecoration.underline,
+        decorationColor: Colors.white,
+        decorationThickness: 1000,
+      );
+      final clipped = _painter('A', clippedStyle);
+      final normal = _painter('B', _style);
+      Rect? retriedBounds;
+      var notifications = 0;
+      cache.addListener(() {
+        notifications++;
+        retriedBounds = cache.boundsFor('B', _style, TextDirection.ltr, normal);
+      });
+      try {
+        expect(cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped), isNull);
+        expect(cache.boundsFor('B', _style, TextDirection.ltr, normal), isNull);
+        expect(cache.debugPendingCount, 1);
+        await cache.settled;
+        expect(cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped), isNull);
+        expect(retriedBounds, isNotNull);
+        expect(retriedBounds!.isEmpty, isFalse);
+        expect(notifications, 2);
+        expect(cache.revision, 2);
+        expect(cache.debugPendingCount, 0);
+        expect(cache.debugLivePictureCount, 0);
+        expect(cache.debugLiveImageCount, 0);
+      } finally {
+        clipped.dispose();
+        normal.dispose();
         cache.dispose();
         await cache.settled;
       }
