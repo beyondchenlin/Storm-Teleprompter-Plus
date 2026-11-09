@@ -293,6 +293,11 @@ void main() {
 
     await show(false);
     final body = key.currentState!.debugLayout;
+    // Settle the independent ink refinement before testing visibility alone.
+    // A genuine native completion is allowed to rebuild annotation geometry.
+    key.currentState!.debugAnnotationLayout!.rowAt(0);
+    await tester.runAsync(() => cache.inkCache.settled);
+    await tester.pump();
     final annotationGeometry = key.currentState!.debugAnnotationLayout;
     final size = tester.getSize(find.byKey(key));
     final cells = [

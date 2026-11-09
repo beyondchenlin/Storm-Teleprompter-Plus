@@ -129,6 +129,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   @override
   void initState() {
     super.initState();
+    _glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
     _continuousDriver = ContinuousScrollDriver(
       vsync: this,
       controller: widget.scrollController,
@@ -166,6 +167,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   void dispose() {
     _continuousDriver.dispose();
     _navigationLayout?.dispose();
+    _glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
     _glyphCache.dispose();
     super.dispose();
   }
@@ -223,6 +225,15 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
 
   @visibleForTesting
   int get debugIntrinsicWidthBuildCount => _intrinsicWidthBuildCount;
+
+  void _handleAnnotationInkChanged() {
+    if (!mounted) return;
+    // Neighbouring authored lines share existing trailing whitespace. Refresh
+    // only this annotation borrowing cache: metrics, widths and scroll anchors
+    // remain valid and must never be dirtied by asynchronous ink measurements.
+    _annotationLeadingSpaces.clear();
+    if (widget.annotations.isNotEmpty) setState(() {});
+  }
 
   ReadingTextGeometry get _textGeometry => ReadingTextGeometry(
     fontSize: widget.fontSize,
@@ -1118,7 +1129,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         viewportHeight: viewportHeight,
         annotations: _lineAnnotations[index],
         showAnnotations: widget.showAnnotations,
-        annotationLeadingSpace: _lineAnnotations[index].isEmpty
+        annotationLeadingSpace: !widget.showAnnotations || _lineAnnotations[index].isEmpty
             ? 0
             : _annotationLeadingSpace(index, textWidth, viewportHeight),
         handleAnnotationLabelTaps: false,
@@ -1244,6 +1255,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     double textWidth,
     double viewportHeight,
   ) {
+    if (_largestFontSize * _fontScale * .22 < 8) return 0;
     // The first line borrows from the existing scroll padding. Recompute it
     // after viewport/reading-line changes; no new padding is ever introduced.
     final cap = _textGeometry.fontSize * _textGeometry.fontScale * 1.2;

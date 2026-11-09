@@ -116,8 +116,15 @@ class _RowEnvelope {
   final List<Rect> bounds;
   final double top;
   final double bottom;
+  final bool requestedInk;
 
-  const _RowEnvelope(this.placements, this.bounds, this.top, this.bottom);
+  const _RowEnvelope(
+    this.placements,
+    this.bounds,
+    this.top,
+    this.bottom,
+    this.requestedInk,
+  );
 }
 
 /// A bounded, lazily measured annotation foreground. It never changes or
@@ -138,6 +145,7 @@ class ReadingAnnotationLayout {
   final List<int> _prefixEnds = [];
   final LinkedHashMap<int, ReadingAnnotationRow> _rows = LinkedHashMap();
   final LinkedHashMap<int, _RowEnvelope> _envelopes = LinkedHashMap();
+  int _inkRevision = -1;
 
   ReadingAnnotationLayout({
     required this.textLayout,
@@ -181,17 +189,15 @@ class ReadingAnnotationLayout {
     final row = layout.rows.last;
     var bottom = row.top;
     for (final placement in layout.placementsForRow(layout.rows.length - 1)) {
-      bottom = math.max(
-        bottom,
-        layout.maximumGlyphBounds(placement, cache).bottom,
-      );
+      final ink = layout.maximumGlyphBounds(placement, cache);
+      if (!ink.isEmpty) bottom = math.max(bottom, ink.bottom);
     }
     return math.max(0, layout.height - bottom - _clearance);
   }
 
-  _RowEnvelope _envelope(int index) {
+  _RowEnvelope _envelope(int index, {bool resolveInk = true}) {
     final cached = _envelopes.remove(index);
-    if (cached != null) {
+    if (cached != null && (!resolveInk || cached.requestedInk)) {
       _envelopes[index] = cached;
       return cached;
     }
@@ -201,15 +207,16 @@ class ReadingAnnotationLayout {
         .toList(growable: false);
     final bounds = [
       for (final placement in placements)
-        textLayout.maximumGlyphBounds(placement, glyphCache),
+        textLayout.maximumGlyphBounds(placement, glyphCache, resolveInk: resolveInk),
     ];
     var top = row.bottom;
     var bottom = row.top;
     for (final rect in bounds) {
+      if (rect.isEmpty) continue;
       top = math.min(top, rect.top);
       bottom = math.max(bottom, rect.bottom);
     }
-    final result = _RowEnvelope(placements, bounds, top, bottom);
+    final result = _RowEnvelope(placements, bounds, top, bottom, resolveInk);
     if (_envelopes.length >= maximumCachedRows + 2) {
       _envelopes.remove(_envelopes.keys.first);
     }
@@ -237,16 +244,44 @@ class ReadingAnnotationLayout {
     }
   }
 
+  bool _hasAnnotationsInRow(int index) {
+    final range = textLayout.rawRangeForRow(index);
+    return range != null && _intersecting(range.start, range.end).isNotEmpty;
+  }
+
+  bool _hasReadableAnnotationInRow(int index) {
+    if (!_hasAnnotationsInRow(index)) return false;
+    for (final placement in textLayout.placementsForRow(index)) {
+      final glyph = placement.grapheme;
+      // Match the label's existing 22% size and 8px readability cutoff.
+      if (textLayout.geometry.fontSizeFor(glyph.format) * .22 >= 8 &&
+          _intersecting(glyph.rawStart, glyph.rawEnd + 1).isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   ReadingAnnotationRow rowAt(int index) {
+    final inkRevision = glyphCache.inkCache.revision;
+    if (_inkRevision != inkRevision) {
+      for (final row in _rows.values) {
+        row.dispose();
+      }
+      _rows.clear();
+      _envelopes.clear();
+      _inkRevision = inkRevision;
+    }
     final cached = _rows.remove(index);
     if (cached != null) {
       _rows[index] = cached;
       return cached;
     }
-    final envelope = _envelope(index);
+    final resolveInk = _hasReadableAnnotationInRow(index);
+    final envelope = _envelope(index, resolveInk: resolveInk);
     final previousBottom = index == 0
         ? -leadingSpace
-        : _envelope(index - 1).bottom + _clearance;
+        : _envelope(index - 1, resolveInk: resolveInk).bottom + _clearance;
     final bandBottom = envelope.top - _clearance * 2;
     final safeBand = Rect.fromLTRB(
       _clearance,
@@ -458,7 +493,7 @@ class ReadingAnnotationLayout {
       _rowIndex(clip.bottom) + 1,
     );
     for (var index = first; index <= last; index++) {
-      yield rowAt(index);
+      if (_hasAnnotationsInRow(index)) yield rowAt(index);
     }
   }
 
@@ -469,6 +504,7 @@ class ReadingAnnotationLayout {
     final first = math.max(0, index - 1);
     final last = math.min(textLayout.rows.length - 1, index + 1);
     for (var i = first; i <= last; i++) {
+      if (!_hasAnnotationsInRow(i)) continue;
       final row = rowAt(i);
       for (final label in row.labels) {
         if (label.rect.contains(position)) result.addAll(label.anchor.notes);

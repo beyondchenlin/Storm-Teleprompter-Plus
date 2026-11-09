@@ -9,6 +9,7 @@ import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
 import '../../models/script_character.dart';
 import 'reading_annotation_layer.dart';
+import 'reading_glyph_ink_cache.dart';
 
 /// Layout reserves the largest supported emphasis, even when emphasis is off.
 /// Changing a cursor, a colour or a scale is consequently a paint-only change.
@@ -247,6 +248,8 @@ class ReadingTextLayout {
   final Map<TextStyle, _ItalicShearEnvelope> _italicEnvelopes;
   late final List<ReadingVisualRow> rows = _computeRows();
   final LinkedHashMap<int, ReadingGlyphPlacement> _placements = LinkedHashMap();
+  final LinkedHashMap<int, Rect> _annotationInkBounds = LinkedHashMap();
+  ReadingGlyphInkCache? _annotationInkSource;
   static const int _placementCacheLimit = 2048;
 
   ReadingTextLayout._({
@@ -519,11 +522,104 @@ class ReadingTextLayout {
     }
   }
 
-  /// A conservative font envelope at the largest permitted emphasis. Leading
-  /// from the user's line-height is deliberately excluded: only genuinely
-  /// empty space around this envelope is available for reading annotations.
-  /// The existing cell already includes italic and horizontal ink reserves.
+  ({int start, int end})? rawRangeForRow(int rowIndex) {
+    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length) return null;
+    final row = rows[rowIndex];
+    if (row.end <= row.start) return null;
+    return (
+      start: graphemes[_indexForCodeUnit(row.start)].rawStart,
+      end: graphemes[_indexForCodeUnit(row.end - 1)].rawEnd + 1,
+    );
+  }
+
+  /// Annotation geometry only: union the real ink under every permitted
+  /// emphasis state. Body cells, baselines and line metrics never use this.
+  /// Until all native measurements are ready, retain the old conservative
+  /// font envelope; a partial result must never expose unsafe whitespace.
   Rect maximumGlyphBounds(
+    ReadingGlyphPlacement placement,
+    ReadingGlyphPainterCache cache, {
+    bool resolveInk = true,
+  }) {
+    if (!identical(_annotationInkSource, cache.inkCache)) {
+      _annotationInkSource = cache.inkCache;
+      _annotationInkBounds.clear();
+    }
+    final cached = _annotationInkBounds.remove(placement.grapheme.start);
+    if (cached != null) {
+      _annotationInkBounds[placement.grapheme.start] = cached;
+      return cached;
+    }
+    if (!resolveInk) return _conservativeGlyphBounds(placement, cache);
+    final glyph = placement.grapheme;
+    final baseStyle = geometry.styleFor(glyph.format).copyWith(
+      height: ui.kTextHeightNone,
+      color: Colors.white,
+      decorationColor: Colors.white,
+      // Decorations add ink to the same glyph. Their combined raster covers
+      // undecorated text too, including underlined spaces. The translucent
+      // source highlight remains a background and is intentionally excluded.
+      decoration: TextDecoration.combine([
+        TextDecoration.underline,
+        TextDecoration.lineThrough,
+      ]),
+    );
+    var complete = true;
+    Rect? inkUnion;
+    for (final weight in {geometry.normalWeight, geometry.boldWeight}) {
+      final style = baseStyle.copyWith(fontWeight: weight);
+      final painter = cache.painterFor(glyph.text, style, direction);
+      final ink = cache.inkCache.boundsFor(glyph.text, style, direction, painter);
+      if (ink == null) {
+        complete = false;
+        continue;
+      }
+      if (ink.isEmpty) continue;
+      final baseline = painter.computeDistanceToActualBaseline(
+        TextBaseline.alphabetic,
+      );
+      // The real renderer scales the base-size canvas, rather than shaping a
+      // larger font. Apply its identical origin and baseline transform here.
+      for (final scale in const [1.0, readingEmphasisMaximumScale]) {
+        final origin = Offset(
+          placement.paintAnchorX - painter.width * scale / 2,
+          placement.row.baseline - baseline * scale,
+        );
+        final bounds = Rect.fromLTRB(
+          origin.dx + ink.left * scale,
+          origin.dy + ink.top * scale,
+          origin.dx + ink.right * scale,
+          origin.dy + ink.bottom * scale,
+        );
+        inkUnion = inkUnion?.expandToInclude(bounds) ?? bounds;
+      }
+    }
+    if (complete) {
+      // The native cache already includes a one-logical-pixel antialiasing
+      // guard, which scales with the same canvas. Do not consume another band
+      // of whitespace by applying that guard twice.
+      final guarded = inkUnion;
+      final resolved = guarded == null
+          ? Rect.fromLTWH(placement.cell.left, placement.row.baseline, placement.cell.width, 0)
+          : Rect.fromLTRB(
+              math.min(placement.cell.left, guarded.left),
+              guarded.top,
+              math.max(placement.cell.right, guarded.right),
+              guarded.bottom,
+            );
+      // Completed geometry belongs to this immutable body layout. Retaining a
+      // bounded set prevents annotation-only refreshes from re-rasterizing
+      // glyphs evicted from the smaller native measurement cache.
+      if (_annotationInkBounds.length >= _placementCacheLimit) {
+        _annotationInkBounds.remove(_annotationInkBounds.keys.first);
+      }
+      _annotationInkBounds[placement.grapheme.start] = resolved;
+      return resolved;
+    }
+    return _conservativeGlyphBounds(placement, cache);
+  }
+
+  Rect _conservativeGlyphBounds(
     ReadingGlyphPlacement placement,
     ReadingGlyphPainterCache cache,
   ) {
@@ -669,10 +765,13 @@ class ReadingTextPresentation {
 /// painters across visible lines, with a hard cap independent of script length.
 class ReadingGlyphPainterCache {
   final int capacity;
+  final ReadingGlyphInkCache inkCache;
   final _painters =
       LinkedHashMap<(String, TextStyle, TextDirection), TextPainter>();
 
-  ReadingGlyphPainterCache({this.capacity = 1024}) : assert(capacity > 0);
+  ReadingGlyphPainterCache({this.capacity = 1024, ReadingGlyphInkCache? inkCache})
+      : assert(capacity > 0),
+        inkCache = inkCache ?? ReadingGlyphInkCache();
 
   TextPainter painterFor(
     String text,
@@ -701,6 +800,7 @@ class ReadingGlyphPainterCache {
   int get length => _painters.length;
 
   void dispose() {
+    inkCache.dispose();
     for (final painter in _painters.values) {
       painter.dispose();
     }
@@ -846,6 +946,7 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   late ReadingTextLayout _layout;
   ReadingAnnotationLayout? _annotations;
   int _layoutBuildCount = 0;
+  int _annotationInkRevision = -1;
 
   @visibleForTesting
   ReadingTextLayout get debugLayout => _layout;
@@ -885,6 +986,7 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   }
 
   void _createAnnotations() {
+    _annotationInkRevision = widget.glyphCache.inkCache.revision;
     _annotations?.dispose();
     _annotations = widget.annotations.isEmpty
         ? null
@@ -899,12 +1001,28 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   @override
   void initState() {
     super.initState();
+    widget.glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
     _createLayout();
+  }
+
+  void _handleAnnotationInkChanged() {
+    if (!mounted ||
+        widget.annotations.isEmpty ||
+        _annotationInkRevision == widget.glyphCache.inkCache.revision) {
+      return;
+    }
+    // Native ink completion only replaces the foreground's two-level cache.
+    // The original ReadingTextLayout remains the very same object.
+    setState(_createAnnotations);
   }
 
   @override
   void didUpdateWidget(ReadingEmphasisLine oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.glyphCache != oldWidget.glyphCache) {
+      oldWidget.glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
+      widget.glyphCache.inkCache.addListener(_handleAnnotationInkChanged);
+    }
     if (!identical(widget.line, oldWidget.line) ||
         widget.geometry != oldWidget.geometry ||
         widget.width != oldWidget.width ||
@@ -920,6 +1038,7 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
 
   @override
   void dispose() {
+    widget.glyphCache.inkCache.removeListener(_handleAnnotationInkChanged);
     _annotations?.dispose();
     _layout.dispose();
     super.dispose();
