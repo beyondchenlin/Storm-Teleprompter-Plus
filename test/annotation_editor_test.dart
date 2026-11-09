@@ -12,6 +12,55 @@ import 'support/quick_workspace_test_host.dart';
 
 void main() {
   testWidgets(
+    'editing an imported long note preserves its complete trailing content',
+    (tester) async {
+      final articles = QuickTestArticles();
+      final settings = QuickTestSettings();
+      final longText = '原${List.filled(2100, '声').join()}保留尾部说明';
+      final note = ReadingAnnotation(
+        id: 'long-note',
+        text: longText,
+        source: 'docx',
+        ranges: const [AnnotationRange(start: 0, end: 2, quote: '学习')],
+      );
+      final article = Article(
+        id: 'long-import',
+        title: '长批注',
+        content: '<p>学习不是记住</p>',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        annotations: [note],
+      );
+      articles.upsertArticle(article);
+      await mountQuickWorkspace(
+        tester,
+        EditorPage(article: article, quickMode: true, autoSave: false),
+        articles,
+        settings,
+      );
+      final editor = tester.state<EditorPageState>(find.byType(EditorPage));
+      unawaited(editor.editExistingAnnotation(note));
+      await tester.pumpAndSettle();
+      final edited = '改${longText.substring(1)}';
+      await tester.enterText(
+        find.byKey(const ValueKey('annotation-text-input')),
+        edited,
+      );
+      await tester.pump();
+      await tester.tap(find.text('保存批注'));
+      await tester.pumpAndSettle();
+      await editor.save(force: true);
+      expect(editor.annotations.single.text, edited);
+      expect(articles.articles.single.annotations.single.text, edited);
+      expect(articles.articles.single.annotations.single.text.length,
+          longText.length);
+      expect(editor.annotations.single.text, endsWith('保留尾部说明'));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
     'selected word note is saved atomically and stays out of body text',
     (tester) async {
       final articles = QuickTestArticles();

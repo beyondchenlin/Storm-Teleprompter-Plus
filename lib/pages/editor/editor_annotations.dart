@@ -239,11 +239,10 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
                   autofocus: true,
                   minLines: 2,
                   maxLines: 5,
-                  maxLength: 2000,
                   decoration: const InputDecoration(
                     labelText: '批注内容',
                     hintText: '例如：重读、停一秒、放慢语速',
-                    helperText: '提词时在字词上方显示；长备注可点击查看全文',
+                    helperText: '提词时在字词上方显示；长备注只缩略显示，全文会完整保存',
                     helperMaxLines: 2,
                   ),
                 ),
