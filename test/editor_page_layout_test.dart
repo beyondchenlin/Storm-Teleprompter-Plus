@@ -207,13 +207,17 @@ void main() {
 
     await pumpEditor('<p> \u200B\uFEFF </p>');
     expect(
-      tester.widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词')).onPressed,
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词'))
+          .onPressed,
       isNull,
     );
 
     await pumpEditor('<p>可见正文</p>');
     expect(
-      tester.widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词')).onPressed,
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '开始提词'))
+          .onPressed,
       isNotNull,
     );
   });
