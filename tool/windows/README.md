@@ -63,6 +63,19 @@ $modelRoot = Join-Path $env:TEMP 'BKTeleprompter-models'
 
 构建入口使用仓库锁定的国内依赖源，强制遵循依赖锁文件，并禁止编译阶段再次解析依赖。它清理旧构建、编译当前干净提交、附带微软运行库，然后记录每个运行文件的内容校验值到 `bk-build-receipt.json`（构建凭据）。打包入口核对当前提交、版本、程序作者元数据、资源图标、模型清单、运行文件和内置模型后，再调用同一份安装配置。
 
+### 复用已校验的文档解析运行库
+
+默认构建仍由原生钩子下载固定版本的文档解析运行库。下载连接失败时，可向 `build_release.ps1`（正式构建脚本）传入 `-PdfiumRuntimeDirectory`（已验证运行库目录参数），复用已有成功构建中的单个 `pdfium.dll`（文档解析动态库）：
+
+```powershell
+.\tool\windows\build_release.ps1 -Version 1.7.7 -BuildNumber 9 `
+  -PdfiumRuntimeDirectory 'C:\Users\ai\BKTeleprompterWorktrees\1.7.5-annotations\build\windows\x64\runner\Release'
+```
+
+指定目录必须只包含一份位于目录根部的该动态库；其他类型文件不会复制。脚本按 `pdfium-runtime.json`（固定运行库清单）验证文件大小、内容校验值及 64 位架构，在清理构建之前将其复制到工作区外的唯一临时目录并再次校验。清理和依赖准备结束后，只把已验证动态库放入原生钩子的下载缓存并复核，然后正常编译并执行全部原有发布校验。临时目录在退出时清理，源目录保持原状；源目录和缓存目录不写入公开构建凭据。
+
+此入口严格限定当前锁定的 `pdfium_dart`（文档解析绑定包）0.2.1 及其 `chromium/7811`（固定解析引擎修订）的缓存契约。升级绑定包或引擎修订时，须重新检查上游构建钩子并同步该入口；不可使用任意同名动态库。构建钩子、旧资产输出及旧构建凭据均不复制，下载证书校验保持原有行为。
+
 生成三个正式产物：
 
 - `BK 提词器-1.7.4-windows-x64-setup.exe`：安装程序。
