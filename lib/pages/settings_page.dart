@@ -22,6 +22,7 @@ import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/settings/about_settings_section.dart';
 import '../widgets/settings/quick_mode_settings_section.dart';
 import '../widgets/settings/reading_emphasis_settings_section.dart';
+import '../widgets/settings/reading_annotation_appearance_dialog.dart';
 
 part 'settings/settings_asr_advanced_dialog.dart';
 part 'settings/settings_backup_section.dart';
@@ -80,6 +81,37 @@ class SettingsPage extends StatelessWidget {
                   _buildSectionHeader(context, '阅读提示'),
                   const SizedBox(height: 12),
                   const ReadingEmphasisSettingsSection(),
+
+                  const SizedBox(height: 24),
+                  _buildSectionHeader(context, '批注默认外观'),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.palette_outlined),
+                    title: const Text('批注字体、字号和颜色'),
+                    subtitle: const Text('用于新稿件；已有稿件保留自己的外观设置'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      final next = await ReadingAnnotationAppearanceDialog.show(
+                        context,
+                        initialSettings: provider.settings,
+                        scopeLabel: '新稿件的默认外观',
+                      );
+                      if (!context.mounted || next == null) return;
+                      try {
+                        await provider.setDefaultAnnotationAppearance(
+                          fontFamily: next.annotationFontFamily,
+                          fontSize: next.annotationFontSize,
+                          color: next.annotationColor,
+                        );
+                      } catch (_) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('默认批注外观未保存，请重试')),
+                        );
+                      }
+                    },
+                  ),
 
                   const SizedBox(height: 24),
 

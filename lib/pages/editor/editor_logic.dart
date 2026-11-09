@@ -15,6 +15,25 @@ mixin EditorLogic on State<EditorPage> {
   late ArticleProvider _articleProvider;
 
   Article? _savedArticle;
+  Map<String, dynamic>? _draftTeleprompterSettings;
+
+  AppSettings get annotationPreviewSettings => context
+      .read<SettingsProvider>()
+      .settings
+      .mergeOverrides(_draftTeleprompterSettings ?? const {});
+
+  void applyAnnotationAppearance(AppSettings settings) {
+    final current = annotationPreviewSettings;
+    if (current.annotationFontFamily == settings.annotationFontFamily &&
+        current.annotationFontSize == settings.annotationFontSize &&
+        current.annotationColor == settings.annotationColor) return;
+    _draftTeleprompterSettings = current.copyWith(
+      annotationFontFamily: settings.annotationFontFamily,
+      annotationFontSize: settings.annotationFontSize,
+      annotationColor: settings.annotationColor,
+    ).toTeleprompterMap();
+    _markChanged();
+  }
   List<ReadingAnnotation> _annotations = const [];
   List<ReadingAnnotation> get annotations => List.unmodifiable(_annotations);
   String? _annotationFontNoticeContent;
@@ -42,6 +61,7 @@ mixin EditorLogic on State<EditorPage> {
 
   bool isDirty = false;
   bool isSaving = false;
+  bool _lastSaveFailed = false;
   bool isFindReplaceVisible = false;
   bool isReplaceMode = false;
   String findReplaceStatus = '';
@@ -55,6 +75,7 @@ mixin EditorLogic on State<EditorPage> {
 
   String get saveStatusText {
     if (isSaving) return '保存中';
+    if (_lastSaveFailed) return '保存失败（修改已保留）';
     if (!autoSaveEnabled && (isDirty || _savedArticle == null)) return '未保存';
     if (isDirty) return '等待自动保存';
     return _savedArticle == null ? '尚未保存' : '已保存';
@@ -64,6 +85,9 @@ mixin EditorLogic on State<EditorPage> {
   void initState() {
     super.initState();
     _savedArticle = widget.article;
+    _draftTeleprompterSettings = widget.article?.teleprompterSettings == null
+        ? null
+        : Map<String, dynamic>.from(widget.article!.teleprompterSettings!);
     _annotations = AnnotationAnchors.validate(
       widget.article?.content ?? '',
       widget.article?.annotations ?? const [],
@@ -396,6 +420,7 @@ mixin EditorLogic on State<EditorPage> {
 
   void _markChanged() {
     if (!mounted) return;
+    _lastSaveFailed = false;
     _discardOnDispose = false;
     _editRevision++;
     setState(() => isDirty = true);
@@ -435,7 +460,10 @@ mixin EditorLogic on State<EditorPage> {
   }
 
   Future<Article?> _runSave(_EditorDraft initialDraft) async {
-    if (mounted) setState(() => isSaving = true);
+    if (mounted) setState(() {
+      isSaving = true;
+      _lastSaveFailed = false;
+    });
 
     try {
       var draft = initialDraft;
@@ -457,6 +485,7 @@ mixin EditorLogic on State<EditorPage> {
             content: draft.content,
             annotations: draft.annotations,
             folderId: _saveFolderId,
+            teleprompterSettings: draft.teleprompterSettings,
           );
         } else {
           savedArticle = await _articleProvider.updateArticle(
@@ -464,12 +493,16 @@ mixin EditorLogic on State<EditorPage> {
             title: title,
             content: draft.content,
             annotations: draft.annotations,
+            teleprompterSettings: draft.teleprompterSettings,
           );
         }
 
         if (savedArticle == null) {
-          if (mounted) setState(() => isDirty = true);
-          return _savedArticle;
+          if (mounted) setState(() {
+            isDirty = true;
+            _lastSaveFailed = true;
+          });
+          return null;
         }
         _savedArticle = savedArticle;
         final queuedDraft = _queuedDraft;
@@ -483,7 +516,11 @@ mixin EditorLogic on State<EditorPage> {
       }
     } catch (e) {
       debugPrint('[Editor] autosave failed: $e');
-      return _savedArticle;
+      if (mounted) setState(() {
+        isDirty = true;
+        _lastSaveFailed = true;
+      });
+      return null;
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -501,6 +538,9 @@ mixin EditorLogic on State<EditorPage> {
         contentController.text,
         _annotations,
       ),
+      teleprompterSettings: _draftTeleprompterSettings == null
+          ? null
+          : Map<String, dynamic>.unmodifiable(_draftTeleprompterSettings!),
     );
   }
 
@@ -531,11 +571,17 @@ mixin EditorLogic on State<EditorPage> {
             annotations: draft.annotations,
             createdAt: now,
             updatedAt: now,
-            teleprompterSettings: _savedArticle?.teleprompterSettings,
+            teleprompterSettings: draft.teleprompterSettings,
           );
     if (!mounted) return;
 
-    if (article == null || article.content.trim().isEmpty) {
+    if (article == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('保存失败，当前修改仍保留在编辑器中，请重试后开始提词')),
+      );
+      return;
+    }
+    if (article.content.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请输入稿件正文')));
@@ -562,7 +608,17 @@ mixin EditorLogic on State<EditorPage> {
       );
     }
 
-    await Navigator.of(context).push(
+    final initialSessionSettings = settingsProvider.mergedSettings.toTeleprompterMap();
+    var lastSessionSettings = initialSessionSettings;
+    void rememberSessionSettings() {
+      final overrides = settingsProvider.articleOverrides;
+      if (overrides.isNotEmpty) {
+        lastSessionSettings = Map<String, dynamic>.from(overrides);
+      }
+    }
+    settingsProvider.addListener(rememberSessionSettings);
+    try {
+      await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MultiProvider(
           providers: [
@@ -576,8 +632,24 @@ mixin EditorLogic on State<EditorPage> {
           ),
         ),
       ),
-    );
+      );
+    } finally {
+      settingsProvider.removeListener(rememberSessionSettings);
+    }
+    if (mounted && !_sameTeleprompterSettings(
+      initialSessionSettings, lastSessionSettings,
+    )) {
+      _draftTeleprompterSettings = lastSessionSettings;
+      _markChanged();
+    }
   }
+
+  bool _sameTeleprompterSettings(
+    Map<String, dynamic> first,
+    Map<String, dynamic> second,
+  ) => first.length == second.length && first.entries.every(
+    (entry) => second.containsKey(entry.key) && second[entry.key] == entry.value,
+  );
 
   void removeEmptyLines() {
     final updated = contentController.text
@@ -619,6 +691,7 @@ mixin EditorLogic on State<EditorPage> {
   /// explicit size makes its 22% note smaller than the 8px readability limit.
   /// A small, unrelated footer must not prompt a manuscript-wide change.
   bool get hasSmallAnnotationFontSize {
+    if (annotationPreviewSettings.annotationFontSize != 0) return false;
     final content = contentController.text;
     if (_annotationFontNoticeContent == content &&
         identical(_annotationFontNoticeNotes, _annotations)) {
@@ -1324,6 +1397,7 @@ class _EditorDraft {
     required this.visibleCharacterCount,
     required this.revision,
     this.annotations = const [],
+    this.teleprompterSettings,
   });
 
   final String title;
@@ -1332,4 +1406,5 @@ class _EditorDraft {
   final int visibleCharacterCount;
   final int revision;
   final List<ReadingAnnotation> annotations;
+  final Map<String, dynamic>? teleprompterSettings;
 }

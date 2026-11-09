@@ -13,6 +13,7 @@ import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart
 import 'package:provider/provider.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
+import '../models/app_settings.dart';
 import '../models/reading_annotation.dart';
 import '../services/annotation_anchors.dart';
 import '../providers/article_provider.dart';
@@ -30,6 +31,7 @@ import '../widgets/editor/quick_mode_action_button.dart';
 import '../widgets/common/app_color_picker_dialog.dart';
 import '../widgets/editor/editor_toolbar.dart';
 import '../widgets/editor/reading_annotation_preview.dart';
+import '../widgets/settings/reading_annotation_appearance_dialog.dart';
 import '../widgets/editor/editor_toolbar_style.dart';
 import 'teleprompter_page.dart';
 
@@ -69,6 +71,9 @@ class EditorPageState extends State<EditorPage>
     with EditorLogic, EditorQuickMode, EditorChrome, EditorAnnotations {
   @override
   Widget build(BuildContext context) {
+    // Defaults can change while a manuscript stays open. The editor keeps its
+    // own manuscript snapshot rather than borrowing another playback session.
+    context.watch<SettingsProvider>();
     return PopScope(
       canPop: !widget.quickMode || !widget.isActive,
       onPopInvokedWithResult: (didPop, _) {
@@ -204,6 +209,11 @@ class EditorPageState extends State<EditorPage>
           ),
         ),
         const SizedBox(width: EditorToolbarStyle.spacing),
+        _buildFormatButton(
+          Icons.palette_outlined,
+          '批注外观：字体、字号和颜色',
+          () => unawaited(editAnnotationAppearance()),
+        ),
         _buildFormatButton(
           Icons.comment_outlined,
           '批注管理（${annotations.length}）',

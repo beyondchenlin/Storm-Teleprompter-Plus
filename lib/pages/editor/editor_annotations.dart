@@ -8,6 +8,20 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
   void toggleAnnotationPreview() =>
       setState(() => showAnnotationPreview = !showAnnotationPreview);
 
+  Future<void> editAnnotationAppearance() async {
+    final settings = await ReadingAnnotationAppearanceDialog.show(
+      context,
+      initialSettings: annotationPreviewSettings,
+      content: contentController.text,
+      annotations: _annotations,
+      focusRawIndex: _focusedPreviewNote?.ranges.first.start,
+      scopeLabel: '应用到本稿件的全部批注',
+    );
+    if (!mounted || settings == null) return;
+    applyAnnotationAppearance(settings);
+    setState(() => showAnnotationPreview = true);
+  }
+
   ReadingAnnotation? get _focusedPreviewNote =>
       _annotations
           .where((note) => note.id == _previewAnnotationId && note.isAnchored)
@@ -39,6 +53,12 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
             const SizedBox(width: 12),
             const Expanded(
               child: Text('提词效果 · 点击框选字词可修改批注', style: TextStyle(fontSize: 12)),
+            ),
+            IconButton(
+              tooltip: '批注外观：字体、字号和颜色',
+              iconSize: 18,
+              onPressed: editAnnotationAppearance,
+              icon: const Icon(Icons.palette_outlined),
             ),
             IconButton(
               tooltip: '收起预览',
@@ -92,6 +112,7 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
       Expanded(
         child: LayoutBuilder(
           builder: (context, constraints) => ReadingAnnotationPreview(
+            settings: annotationPreviewSettings,
             content: contentController.text,
             annotations: _focusedPreviewNote == null
                 ? const []
@@ -207,6 +228,7 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
         content: SizedBox(
           width: 680,
           child: ReadingAnnotationPreview(
+            settings: annotationPreviewSettings,
             content: contentController.text,
             annotations: [note],
             focusRawIndex: note.ranges.first.start,
@@ -328,6 +350,7 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: controller,
                     builder: (context, value, _) => ReadingAnnotationPreview(
+                      settings: annotationPreviewSettings,
                       key: const ValueKey('live-annotation-preview'),
                       content: contentController.text,
                       annotations: [

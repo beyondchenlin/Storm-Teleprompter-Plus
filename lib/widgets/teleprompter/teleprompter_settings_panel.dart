@@ -14,8 +14,11 @@ import '../settings/reading_emphasis_settings_section.dart';
 /// 按播放进度条、正文外观、排版、阅读区域分组。
 class TeleprompterSettingsPanel extends StatefulWidget {
   final VoidCallback onClose;
+  final VoidCallback? onAnnotationAppearance;
 
-  const TeleprompterSettingsPanel({super.key, required this.onClose});
+  const TeleprompterSettingsPanel({
+    super.key, required this.onClose, this.onAnnotationAppearance,
+  });
 
   @override
   State<TeleprompterSettingsPanel> createState() =>
@@ -86,6 +89,15 @@ class _TeleprompterSettingsPanelState extends State<TeleprompterSettingsPanel> {
                         ),
                         _buildMirrorTextSwitch(context, provider, settings),
                         _buildExtraBoldSlider(context, provider, settings),
+                        if (widget.onAnnotationAppearance != null)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.palette_outlined, size: 20),
+                            title: const Text('批注外观', style: TextStyle(fontSize: 13)),
+                            subtitle: const Text('字体、字号和颜色 · 实时预览', style: TextStyle(fontSize: 11)),
+                            trailing: const Icon(Icons.chevron_right, size: 18),
+                            onTap: widget.onAnnotationAppearance,
+                          ),
                         const Divider(height: 24),
 
                         // 播放中仍可调整；四项新设置始终读取全局状态。

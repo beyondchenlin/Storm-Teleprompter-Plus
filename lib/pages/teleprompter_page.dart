@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import '../backend/ws_protocol.dart';
 import '../models/article.dart';
 import '../models/reading_annotation.dart';
+import '../models/reading_annotation_style.dart';
 import '../services/annotation_anchors.dart';
 import '../models/app_settings.dart';
 import '../providers/article_provider.dart';
@@ -24,6 +25,7 @@ import '../widgets/teleprompter/teleprompter_viewport.dart';
 import '../widgets/teleprompter/auto_speed_picker.dart';
 import '../widgets/teleprompter/prompt_entrance.dart';
 import '../widgets/teleprompter/teleprompter_settings_panel.dart';
+import '../widgets/settings/reading_annotation_appearance_dialog.dart';
 import 'settings_page.dart';
 
 part 'teleprompter/teleprompter_logic.dart';
@@ -276,7 +278,10 @@ class _TeleprompterPageState extends State<TeleprompterPage>
               top: 0,
               right: 0,
               bottom: 0,
-              child: TeleprompterSettingsPanel(onClose: _closeSettingsPanel),
+              child: TeleprompterSettingsPanel(
+                onClose: _closeSettingsPanel,
+                onAnnotationAppearance: _showAnnotationAppearance,
+              ),
             ),
         ],
       ),
@@ -650,6 +655,16 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                     ),
                   ),
+                ),
+              if (_readingAnnotations.isNotEmpty)
+                IconButton(
+                  key: const ValueKey('playback-annotation-appearance'),
+                  onPressed: _showAnnotationAppearance,
+                  tooltip: '批注外观：字体、字号和颜色',
+                  icon: const Icon(Icons.palette_outlined, size: 20),
+                  color: AppColors.textPrimary,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
               IconButton(
                 icon: Icon(
@@ -1395,6 +1410,7 @@ class _TeleprompterPageState extends State<TeleprompterPage>
         scrollController: scrollController,
         lines: teleprompter.lines,
         annotations: _readingAnnotations,
+        annotationStyle: ReadingAnnotationStyle.fromSettings(settings),
         showAnnotations: settings.showAnnotations,
         currentIndex: teleprompter.currentIndex,
         fontSize: settings.fontSize,
@@ -1441,6 +1457,23 @@ class _TeleprompterPageState extends State<TeleprompterPage>
   }
 
   // ─── 阅读区域框（主体样式） ────────────────────────────
+
+  Future<void> _showAnnotationAppearance() async {
+    final provider = context.read<SettingsProvider>();
+    final next = await ReadingAnnotationAppearanceDialog.show(
+      context,
+      initialSettings: provider.mergedSettings,
+      content: widget.article.content,
+      annotations: _readingAnnotations,
+      focusRawIndex: context.read<TeleprompterProvider>().currentIndex,
+    );
+    if (!mounted || next == null) return;
+    await provider.setAnnotationAppearance(
+      fontFamily: next.annotationFontFamily,
+      fontSize: next.annotationFontSize,
+      color: next.annotationColor,
+    );
+  }
 
   /// 阅读线固定金色（与原版 fdc800 一致）
   static const Color _readingLineGold = Color(0xFFFDC800);
