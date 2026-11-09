@@ -56,6 +56,8 @@ class TeleprompterProvider with ChangeNotifier {
   String? _asrError;
   String? _asrMessage;
   int _asrStartGeneration = 0;
+  int _asrAnchorRevision = 0;
+  String _asrFollowState = 'listening';
   StreamSubscription<WsMessage>? _asrResultSubscription;
   StreamSubscription<WsMessage>? _asrStatusSubscription;
   bool _disposed = false;
@@ -79,6 +81,8 @@ class TeleprompterProvider with ChangeNotifier {
   String get asrStatus => _asrStatus;
   String? get asrError => _asrError;
   String? get asrMessage => _asrMessage;
+  int get asrAnchorRevision => _asrAnchorRevision;
+  String get asrFollowState => _asrFollowState;
   bool get isAsrLoading => _asrStatus == 'loading';
   bool get controlsVisible => _controlsVisible;
   bool get controlsPinned => _controlsPinned;
@@ -119,7 +123,10 @@ class TeleprompterProvider with ChangeNotifier {
     final next = value.clamp(0.0, 1.0).toDouble();
     if ((_viewportProgress - next).abs() < 0.0005) return;
     _viewportProgress = next;
-    if (_activeAutoScrollMode == AutoScrollMode.continuous) _syncToBackend();
+    if (_activeAutoMode == ScrollMode.auto &&
+        _activeAutoScrollMode == AutoScrollMode.continuous) {
+      _syncToBackend();
+    }
     notifyListeners();
   }
 
@@ -140,6 +147,23 @@ class TeleprompterProvider with ChangeNotifier {
     if (_disposed) return;
     final articleId = message.data['articleId'] as String? ?? '';
     if (articleId.isNotEmpty && articleId != _articleId) return;
+    final anchorRevision = (message.data['asrAnchorRevision'] as num?)?.toInt();
+    final isLocalController = _connection?.isLocal == true;
+    // A result already in transit before a manual seek must not move the
+    // cursor back to its previous location. Old peers remain readable until
+    // the first explicit anchor change, after which an acknowledgement is
+    // required before accepting positions.
+    if ((anchorRevision != null &&
+            (anchorRevision < _asrAnchorRevision ||
+                (isLocalController && anchorRevision != _asrAnchorRevision))) ||
+        (message.type == WsMessageType.asrResult &&
+            anchorRevision == null &&
+            _asrAnchorRevision > 0)) {
+      return;
+    }
+    if (anchorRevision != null && !isLocalController) {
+      _asrAnchorRevision = anchorRevision;
+    }
     // A failed start has already cancelled the backend. Keep its explanation
     // until an explicit retry or script reload, even if old status packets arrive.
     if (_asrStatus == 'error' &&
@@ -150,6 +174,7 @@ class TeleprompterProvider with ChangeNotifier {
     }
     _asrStatus = message.data['status'] as String? ?? _asrStatus;
     _asrTranscript = message.data['text'] as String? ?? _asrTranscript;
+    _asrFollowState = message.data['followState'] as String? ?? _asrFollowState;
     _rms = (message.data['rms'] as num?)?.toDouble() ?? _rms;
     final incomingError = message.data['error'] as String?;
     if (incomingError != null || _asrStatus != 'paused') {
@@ -166,6 +191,7 @@ class TeleprompterProvider with ChangeNotifier {
     // 只有播放中的真实识别结果可以推进或确认当前字。
     if (message.type == WsMessageType.asrResult &&
         isPlaying &&
+        _activeAutoMode == ScrollMode.asr &&
         index != null &&
         index >= 0 &&
         (index >= _currentIndex || allowBackward)) {
@@ -179,8 +205,13 @@ class TeleprompterProvider with ChangeNotifier {
     required bool isPlaying,
     required AppSettings settings,
     double? scrollProgress,
+    int? asrAnchorRevision,
   }) {
     if (_state == TeleprompterState.idle || _totalChars == 0) return;
+    if (asrAnchorRevision != null) {
+      if (asrAnchorRevision < _asrAnchorRevision) return;
+      _asrAnchorRevision = asrAnchorRevision;
+    }
 
     final normalizedIndex = currentIndex < 0
         ? -1
@@ -249,6 +280,7 @@ class TeleprompterProvider with ChangeNotifier {
       'scrollProgress': _viewportProgress,
       'isPlaying': isPlaying,
       'articleId': _articleId,
+      'asrAnchorRevision': _asrAnchorRevision,
     };
   }
 
@@ -342,6 +374,15 @@ class TeleprompterProvider with ChangeNotifier {
     _asrStatus = 'idle';
     _asrError = null;
     _asrMessage = null;
+    if (_connection?.isRemote == true ||
+        _connection?.canRetryRemoteConnection == true) {
+      // A follower adopts the controller's revision when opening/rejoining a
+      // session; reopening its view must not invent newer control commands.
+      _asrAnchorRevision = 0;
+      _asrFollowState = 'listening';
+    } else {
+      _markManualAnchor();
+    }
     _rms = 0;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _playStartTime = null;
@@ -398,7 +439,49 @@ class TeleprompterProvider with ChangeNotifier {
   /// 手动设置当前索引（点击跳转）
   void setCurrentIndex(int rawIndex) {
     _currentIndex = _normalizeRawIndex(rawIndex);
+    _markManualAnchor();
     _syncToBackend();
+    notifyListeners();
+  }
+
+  void _markManualAnchor() {
+    _asrAnchorRevision++;
+    _asrFollowState = 'listening';
+    _asrTranscript = '';
+  }
+
+  /// Return to the current spoken sentence, independent of visual wrapping.
+  void restartCurrentSentence() {
+    if (_totalChars == 0) return;
+    final characters = _lines.expand((line) => line.characters).toList();
+    final ordinal = _ordinalForRawIndex(
+      _currentIndex,
+    ).clamp(0, characters.length - 1).toInt();
+    final lineStarts = _lines
+        .where((line) => line.characters.isNotEmpty)
+        .map((line) => line.characters.first.rawIndex)
+        .toSet();
+    var start = ordinal;
+    while (start > 0) {
+      if (lineStarts.contains(characters[start].rawIndex)) break;
+      final previous = characters[start - 1].char;
+      final decimalPoint =
+          previous == '.' &&
+          start > 1 &&
+          RegExp(r'[0-9]').hasMatch(characters[start - 2].char) &&
+          RegExp(r'[0-9]').hasMatch(characters[start].char);
+      if (RegExp(r'[。！？!?；;\r\n]').hasMatch(previous) ||
+          (previous == '.' && !decimalPoint)) {
+        break;
+      }
+      start--;
+    }
+    // The displayed cursor belongs to this sentence. The alignment engine's
+    // explicit-anchor path also accepts reading the selected character.
+    _currentIndex = characters[start].rawIndex;
+    _viewportSeekRevision++;
+    _markManualAnchor();
+    _syncToBackend(reliable: true);
     notifyListeners();
   }
 
@@ -408,6 +491,7 @@ class TeleprompterProvider with ChangeNotifier {
     _stopAutoScroll();
     _stopAsr();
     _currentIndex = -1;
+    _markManualAnchor();
     _viewportProgress = 0;
     _state = _lines.isEmpty ? TeleprompterState.idle : TeleprompterState.paused;
     _controlsVisible = true;
@@ -424,6 +508,7 @@ class TeleprompterProvider with ChangeNotifier {
     final targetOrdinal = currentOrdinal <= 0 ? 0 : currentOrdinal - 1;
     final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
+    _markManualAnchor();
     if (_state == TeleprompterState.playing &&
         settings.scrollMode == ScrollMode.auto) {
       _stopAutoScroll();
@@ -439,6 +524,7 @@ class TeleprompterProvider with ChangeNotifier {
     final targetOrdinal = currentOrdinal < 0 ? 0 : currentOrdinal + 1;
     final target = _rawIndexAtOrdinal(targetOrdinal);
     _currentIndex = target;
+    _markManualAnchor();
     if (_state == TeleprompterState.playing &&
         settings.scrollMode == ScrollMode.auto) {
       _stopAutoScroll();
@@ -453,6 +539,7 @@ class TeleprompterProvider with ChangeNotifier {
     _viewportSeekRevision++;
     _viewportProgress = 0;
     _currentIndex = -1;
+    _markManualAnchor();
     _syncToBackend();
     notifyListeners();
   }
@@ -463,6 +550,7 @@ class TeleprompterProvider with ChangeNotifier {
       _viewportSeekRevision++;
       _viewportProgress = 1;
       _currentIndex = _charRawIndices.last;
+      _markManualAnchor();
       _syncToBackend();
       notifyListeners();
     }
@@ -689,6 +777,7 @@ class TeleprompterProvider with ChangeNotifier {
       return;
     }
     _asrStatus = 'loading';
+    _markManualAnchor();
     _asrError = null;
     _asrMessage = '正在准备语音识别…';
     final generation = ++_asrStartGeneration;

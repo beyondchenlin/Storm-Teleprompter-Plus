@@ -66,6 +66,7 @@ class _RecognitionConnection extends ConnectionProvider {
   final _messages = StreamController<WsMessage>.broadcast();
   final requests = <WsMessageType>[];
   final started = Completer<void>();
+  int anchorRevision = 0;
 
   @override
   bool get isConnected => true;
@@ -89,6 +90,7 @@ class _RecognitionConnection extends ConnectionProvider {
           'status': 'running',
           'currentIndex': index,
           'text': '今天我们一起测试',
+          'asrAnchorRevision': anchorRevision,
         },
       ),
     );
@@ -101,6 +103,9 @@ class _RecognitionConnection extends ConnectionProvider {
     Duration timeout = const Duration(seconds: 10),
   }) async {
     requests.add(type);
+    if (type == WsMessageType.teleprompterSync) {
+      anchorRevision = (data['asrAnchorRevision'] as num?)?.toInt() ?? 0;
+    }
     if (type == WsMessageType.asrStart && !started.isCompleted) {
       started.complete();
     }

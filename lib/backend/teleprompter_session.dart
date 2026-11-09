@@ -34,6 +34,7 @@ class TeleprompterSession {
 
   /// 会话消息顺序号。客户端用它丢弃晚到的旧同步，避免暂停被旧播放状态覆盖。
   int _revision = 0;
+  int _asrAnchorRevision = 0;
 
   /// 状态变更控制器
   final StreamController<TeleprompterSessionState> _stateController =
@@ -74,6 +75,7 @@ class TeleprompterSession {
   void _handleStartSession(WsServer server, WsRequest request) {
     final data = request.message.data;
     _activeArticleId = data['articleId'] as String?;
+    _asrAnchorRevision = 0;
     _currentIndex = data['currentIndex'] as int? ?? -1;
     _scrollProgress = (data['scrollProgress'] as num?)?.toDouble() ?? 0;
     _isPlaying = data['isPlaying'] as bool? ?? false;
@@ -154,6 +156,23 @@ class TeleprompterSession {
 
   void _handleSync(WsServer server, WsRequest request) {
     final data = request.message.data;
+    final anchorRevision = (data['asrAnchorRevision'] as num?)?.toInt();
+    final articleId = data['articleId'] as String?;
+    if ((articleId != null && articleId != _activeArticleId) ||
+        (anchorRevision != null && anchorRevision < _asrAnchorRevision)) {
+      if (request.message.id != null) {
+        server.respond(
+          request.clientId,
+          WsMessage(
+            type: WsMessageType.teleprompterSync,
+            id: request.message.id,
+            data: _sessionData(),
+          ),
+        );
+      }
+      return;
+    }
+    if (anchorRevision != null) _asrAnchorRevision = anchorRevision;
     _currentIndex = data['currentIndex'] as int? ?? _currentIndex;
     _scrollProgress =
         ((data['scrollProgress'] as num?)?.toDouble() ?? _scrollProgress).clamp(
@@ -161,7 +180,7 @@ class TeleprompterSession {
           1.0,
         );
     _isPlaying = data['isPlaying'] as bool? ?? _isPlaying;
-    _asrSession?.setCurrentIndex(_currentIndex);
+    _asrSession?.setCurrentIndex(_currentIndex, anchorRevision: anchorRevision);
     _revision++;
 
     _emitState();
@@ -228,6 +247,7 @@ class TeleprompterSession {
       'isPlaying': _isPlaying,
       'settings': _settingsOverride,
       'revision': _revision,
+      'asrAnchorRevision': _asrAnchorRevision,
       if (_articleSnapshot != null) 'article': _articleSnapshot,
     };
   }

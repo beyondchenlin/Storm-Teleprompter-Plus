@@ -219,7 +219,7 @@ void main() {
     for (var index = 20; index < 50; index++) {
       harness.connection.messages.add(
         WsMessage(
-          type: WsMessageType.asrResult,
+          type: WsMessageType.asrStatus,
           data: {
             'articleId': harness.article.id,
             'status': 'running',

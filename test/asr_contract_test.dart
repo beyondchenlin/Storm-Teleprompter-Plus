@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:storm_teleprompter_plus/backend/asr_session_service.dart';
 import 'package:storm_teleprompter_plus/backend/ws_protocol.dart';
 import 'package:storm_teleprompter_plus/models/app_settings.dart';
 import 'package:storm_teleprompter_plus/providers/settings_provider.dart';
@@ -94,7 +93,7 @@ void main() {
   });
 
   group('server-side transcript alignment', () {
-    test('partial results advance without moving backwards', () {
+    test('partial progress ignores unrelated speech', () {
       final alignment = TeleprompterAlignment()..setScript('欢迎使用飓风提词器，现在开始测试。');
 
       final first = alignment.consumeTranscript('欢迎使用', false);
@@ -103,7 +102,7 @@ void main() {
 
       expect(first.index, greaterThanOrEqualTo(0));
       expect(second.index, greaterThanOrEqualTo(first.index));
-      expect(noisy.index, greaterThanOrEqualTo(second.index));
+      expect(noisy.index, second.index);
     });
 
     test('final result commits the anchor for the next phrase', () {
@@ -163,77 +162,52 @@ void main() {
       expect(result.index, 32);
     });
 
-    test('allows a confirmed long phrase to move back', () {
+    test('allows a confirmed nearby sentence to move back', () {
       final alignment = TeleprompterAlignment()
         ..setScript('第一句内容已经结束。第二句内容正在朗读。第三句内容稍后开始。');
       alignment.setCurrentIndex(27);
 
-      final shortResult = alignment.consumeTranscript('第一句', false);
-      final rewindResult = alignment.consumeTranscript('第一句内容已经结束', false);
+      final rewindResult = alignment.consumeTranscript('第二句内容正在朗读', true);
 
-      expect(shortResult.index, greaterThanOrEqualTo(27));
-      expect(rewindResult.index, lessThan(27));
+      expect(rewindResult.index, 18);
       expect(rewindResult.meta.allowBackward, isTrue);
     });
 
-    test('ASR advances are limited like the reference client', () {
-      expect(
-        AsrSessionService.limitAdvance(
-          currentIndex: 10,
-          requestedIndex: 100,
-          isFinal: false,
-        ),
-        14,
-      );
-      expect(
-        AsrSessionService.limitAdvance(
-          currentIndex: 10,
-          requestedIndex: 100,
-          isFinal: true,
-        ),
-        16,
-      );
-      expect(
-        AsrSessionService.limitAdvance(
-          currentIndex: -1,
-          requestedIndex: 20,
-          isFinal: false,
-        ),
-        20,
-      );
+    test('does not automatically rewind across distant sentences', () {
+      final alignment = TeleprompterAlignment()
+        ..setScript('第一句内容已经结束。第二句内容正在朗读。第三句内容稍后开始。');
+      alignment.setCurrentIndex(27);
+
+      final distant = alignment.consumeTranscript('第一句内容已经结束', true);
+
+      expect(distant.index, 27);
+      expect(distant.meta.allowBackward, isFalse);
     });
   });
 
   group('ASR transcript normalization', () {
-    test('collapses pathological character and phrase repetitions', () {
-      expect(normalizeAsrTranscript('泛泛泛泛由于由于明明明明'), '泛由于明');
-    });
-
-    test('keeps ordinary double characters', () {
+    test('preserves repeated characters and phrases spoken on purpose', () {
+      expect(normalizeAsrTranscript('泛泛泛泛由于由于明明明明'), '泛泛泛泛由于由于明明明明');
+      expect(normalizeAsrTranscript('重要重要重要'), '重要重要重要');
       expect(normalizeAsrTranscript('人人都看看'), '人人都看看');
     });
 
-    test('removes overlap between committed and partial UI text', () {
+    test('keeps distinct utterances even when their words overlap', () {
       expect(
         composeAsrDisplayText('第一句已经读完', '已经读完第二句正在开始'),
-        '第一句已经读完\n第二句正在开始',
+        '第一句已经读完\n已经读完第二句正在开始',
       );
-    });
-
-    test('removes short overlaps emitted by mobile recognizers', () {
-      expect(composeAsrDisplayText('第一句', '句第二句'), '第一句\n第二句');
-      expect(composeAsrDisplayText('请继续阅读', '阅读下一段'), '请继续阅读\n下一段');
+      expect(composeAsrDisplayText('第一句', '句第二句'), '第一句\n句第二句');
       expect(
         composeAsrDisplayText('Welcome everyone', 'everyone to the show'),
-        'Welcome everyone\nto the show',
+        'Welcome everyone\neveryone to the show',
       );
-      expect(composeAsrDisplayText('idea', 'and then'), 'idea\nand then');
     });
 
-    test('does not append a repeated final segment twice', () {
+    test('appends a genuinely repeated final utterance', () {
       expect(
         appendAsrTranscript('Welcome everyone', 'Welcome everyone'),
-        'Welcome everyone',
+        'Welcome everyone\nWelcome everyone',
       );
     });
   });

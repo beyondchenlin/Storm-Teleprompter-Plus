@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
+import 'asr_recognition_event.dart';
 
 class AsrModelInfo {
   final String id;
@@ -147,6 +148,8 @@ class AsrService with ChangeNotifier {
   Future<void> start({
     required void Function(String text) onPartialResult,
     required void Function(String text) onFinalResult,
+    void Function(AsrRecognitionEvent event)? onRecognitionEvent,
+    int recognitionEpoch = 0,
     void Function(double rms)? onRmsUpdate,
     String? inputDeviceId,
     void Function(Object error)? onError,
@@ -155,6 +158,8 @@ class AsrService with ChangeNotifier {
   }
 
   void processAudioSamples(Float32List samples) {}
+
+  void resetRecognition({required int epoch}) {}
 
   double get previewRms => 0;
   String? get previewDeviceId => null;

@@ -212,6 +212,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
       currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
       isPlaying: message.data['isPlaying'] as bool? ?? false,
       scrollProgress: (message.data['scrollProgress'] as num?)?.toDouble(),
+      asrAnchorRevision: (message.data['asrAnchorRevision'] as num?)?.toInt(),
       settings: settingsProvider.mergedSettings,
     );
 
@@ -278,6 +279,7 @@ mixin HomeLogic on State<HomePage>, HomeQuickMode {
       currentIndex: (message.data['currentIndex'] as num?)?.toInt() ?? -1,
       isPlaying: message.data['isPlaying'] as bool? ?? false,
       scrollProgress: (message.data['scrollProgress'] as num?)?.toDouble(),
+      asrAnchorRevision: (message.data['asrAnchorRevision'] as num?)?.toInt(),
       settings: context.read<SettingsProvider>().mergedSettings,
     );
   }

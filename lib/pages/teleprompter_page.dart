@@ -970,6 +970,19 @@ class _TeleprompterPageState extends State<TeleprompterPage>
             ),
           ),
         ),
+        if (settings.scrollMode == ScrollMode.asr) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            key: const ValueKey('teleprompter-repeat-sentence'),
+            tooltip: '重读本句',
+            onPressed: teleprompter.restartCurrentSentence,
+            icon: const Icon(
+              Icons.replay,
+              size: 22,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1506,10 +1519,15 @@ class _TeleprompterPageState extends State<TeleprompterPage>
     final message = switch (teleprompter.asrStatus) {
       'loading' => teleprompter.asrMessage ?? '正在准备语音识别…',
       'error' => teleprompter.asrError ?? '语音识别启动失败',
+      'paused' => '语音识别已暂停',
       _ when teleprompter.asrTranscript.isNotEmpty =>
         teleprompter.asrTranscript,
-      'paused' => '语音识别已暂停',
       _ => '等待语音输入',
+    };
+    final followLabel = switch (teleprompter.asrFollowState) {
+      'following' => '顺序跟随 · 跟随中',
+      'waiting' => '顺序跟随 · 等待继续，可点击正文定位',
+      _ => '顺序跟随 · 请从当前位置开始朗读',
     };
 
     return Padding(
@@ -1546,15 +1564,31 @@ class _TeleprompterPageState extends State<TeleprompterPage>
                         const SizedBox(width: 10),
                       ],
                       Expanded(
-                        child: Text(
-                          message,
-                          style: TextStyle(
-                            color: teleprompter.asrStatus == 'error'
-                                ? Colors.redAccent
-                                : AppColors.textPrimary,
-                            fontSize: 15,
-                            height: 1.4,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (teleprompter.asrStatus == 'running') ...[
+                              Text(
+                                followLabel,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                            ],
+                            Text(
+                              message,
+                              style: TextStyle(
+                                color: teleprompter.asrStatus == 'error'
+                                    ? Colors.redAccent
+                                    : AppColors.textPrimary,
+                                fontSize: 15,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
