@@ -207,7 +207,11 @@ class ReadingAnnotationLayout {
         .toList(growable: false);
     final bounds = [
       for (final placement in placements)
-        textLayout.maximumGlyphBounds(placement, glyphCache, resolveInk: resolveInk),
+        textLayout.maximumGlyphBounds(
+          placement,
+          glyphCache,
+          resolveInk: resolveInk,
+        ),
     ];
     var top = row.bottom;
     var bottom = row.top;

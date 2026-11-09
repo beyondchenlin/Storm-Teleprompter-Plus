@@ -523,7 +523,8 @@ class ReadingTextLayout {
   }
 
   ({int start, int end})? rawRangeForRow(int rowIndex) {
-    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length) return null;
+    if (graphemes.isEmpty || rowIndex < 0 || rowIndex >= rows.length)
+      return null;
     final row = rows[rowIndex];
     if (row.end <= row.start) return null;
     return (
@@ -552,24 +553,31 @@ class ReadingTextLayout {
     }
     if (!resolveInk) return _conservativeGlyphBounds(placement, cache);
     final glyph = placement.grapheme;
-    final baseStyle = geometry.styleFor(glyph.format).copyWith(
-      height: ui.kTextHeightNone,
-      color: Colors.white,
-      decorationColor: Colors.white,
-      // Decorations add ink to the same glyph. Their combined raster covers
-      // undecorated text too, including underlined spaces. The translucent
-      // source highlight remains a background and is intentionally excluded.
-      decoration: TextDecoration.combine([
-        TextDecoration.underline,
-        TextDecoration.lineThrough,
-      ]),
-    );
+    final baseStyle = geometry
+        .styleFor(glyph.format)
+        .copyWith(
+          height: ui.kTextHeightNone,
+          color: Colors.white,
+          decorationColor: Colors.white,
+          // Decorations add ink to the same glyph. Their combined raster covers
+          // undecorated text too, including underlined spaces. The translucent
+          // source highlight remains a background and is intentionally excluded.
+          decoration: TextDecoration.combine([
+            TextDecoration.underline,
+            TextDecoration.lineThrough,
+          ]),
+        );
     var complete = true;
     Rect? inkUnion;
     for (final weight in {geometry.normalWeight, geometry.boldWeight}) {
       final style = baseStyle.copyWith(fontWeight: weight);
       final painter = cache.painterFor(glyph.text, style, direction);
-      final ink = cache.inkCache.boundsFor(glyph.text, style, direction, painter);
+      final ink = cache.inkCache.boundsFor(
+        glyph.text,
+        style,
+        direction,
+        painter,
+      );
       if (ink == null) {
         complete = false;
         continue;
@@ -600,7 +608,12 @@ class ReadingTextLayout {
       // of whitespace by applying that guard twice.
       final guarded = inkUnion;
       final resolved = guarded == null
-          ? Rect.fromLTWH(placement.cell.left, placement.row.baseline, placement.cell.width, 0)
+          ? Rect.fromLTWH(
+              placement.cell.left,
+              placement.row.baseline,
+              placement.cell.width,
+              0,
+            )
           : Rect.fromLTRB(
               math.min(placement.cell.left, guarded.left),
               guarded.top,
@@ -769,9 +782,11 @@ class ReadingGlyphPainterCache {
   final _painters =
       LinkedHashMap<(String, TextStyle, TextDirection), TextPainter>();
 
-  ReadingGlyphPainterCache({this.capacity = 1024, ReadingGlyphInkCache? inkCache})
-      : assert(capacity > 0),
-        inkCache = inkCache ?? ReadingGlyphInkCache();
+  ReadingGlyphPainterCache({
+    this.capacity = 1024,
+    ReadingGlyphInkCache? inkCache,
+  }) : assert(capacity > 0),
+       inkCache = inkCache ?? ReadingGlyphInkCache();
 
   TextPainter painterFor(
     String text,

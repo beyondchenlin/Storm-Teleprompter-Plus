@@ -39,7 +39,9 @@ class _ControlledInkCache extends ReadingGlyphInkCache {
     requested.add((text: text, style: style));
     if (!readyWeights.contains(style.fontWeight)) return null;
     if (emptyInk) return Rect.zero;
-    final baseline = painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+    final baseline = painter.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
     // Deliberately asymmetric styles: neither weight contains the other.
     return style.fontWeight == FontWeight.w400
         ? Rect.fromLTRB(-7, baseline - 9, painter.width + 2, baseline + 4)
@@ -50,10 +52,15 @@ class _ControlledInkCache extends ReadingGlyphInkCache {
 ReadingAnnotation _note(int start, String quote) => ReadingAnnotation(
   id: 'note-$start',
   text: '重读',
-  ranges: [AnnotationRange(start: start, end: start + quote.length, quote: quote)],
+  ranges: [
+    AnnotationRange(start: start, end: start + quote.length, quote: quote),
+  ],
 );
 
-Future<void> _settleInk(WidgetTester tester, ReadingGlyphPainterCache cache) async {
+Future<void> _settleInk(
+  WidgetTester tester,
+  ReadingGlyphPainterCache cache,
+) async {
   for (var pass = 0; pass < 8; pass++) {
     await tester.runAsync(() => cache.inkCache.settled);
     await tester.pump();
@@ -70,10 +77,12 @@ Future<List<int>> _bodyPixels(
   ReadingEmphasisLineState state,
 ) async {
   final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.descendant(
-      of: find.byWidget(state.widget),
-      matching: find.byType(RepaintBoundary),
-    ).first,
+    find
+        .descendant(
+          of: find.byWidget(state.widget),
+          matching: find.byType(RepaintBoundary),
+        )
+        .first,
   );
   return (await tester.runAsync(() async {
     final image = await boundary.toImage(pixelRatio: 1);
@@ -99,7 +108,11 @@ void main() {
     addTearDown(body.dispose);
     addTearDown(cache.dispose);
     final placement = body.placementAt(0);
-    final fallback = body.maximumGlyphBounds(placement, cache, resolveInk: false);
+    final fallback = body.maximumGlyphBounds(
+      placement,
+      cache,
+      resolveInk: false,
+    );
     expect(ink.requested, isEmpty);
     expect(body.maximumGlyphBounds(placement, cache), fallback);
     ink.complete(FontWeight.w400);
@@ -117,15 +130,33 @@ void main() {
       expect(request.style.color, Colors.white);
       expect(request.style.backgroundColor, isNull);
       expect(request.style.background, isNull);
-      expect(request.style.decoration!.contains(TextDecoration.underline), isTrue);
-      expect(request.style.decoration!.contains(TextDecoration.lineThrough), isTrue);
-      final painter = cache.painterFor(request.text, request.style, TextDirection.ltr);
+      expect(
+        request.style.decoration!.contains(TextDecoration.underline),
+        isTrue,
+      );
+      expect(
+        request.style.decoration!.contains(TextDecoration.lineThrough),
+        isTrue,
+      );
+      final painter = cache.painterFor(
+        request.text,
+        request.style,
+        TextDirection.ltr,
+      );
       final leftInk = request.style.fontWeight == FontWeight.w400 ? -7 : 1;
       final rightInk = request.style.fontWeight == FontWeight.w400 ? 2 : 8;
       for (final scale in [1.0, 1.15]) {
         final originX = placement.paintAnchorX - painter.width * scale / 2;
-        expect(actual.left, lessThanOrEqualTo(originX + leftInk * scale + .0001));
-        expect(actual.right, greaterThanOrEqualTo(originX + (painter.width + rightInk) * scale - .0001));
+        expect(
+          actual.left,
+          lessThanOrEqualTo(originX + leftInk * scale + .0001),
+        );
+        expect(
+          actual.right,
+          greaterThanOrEqualTo(
+            originX + (painter.width + rightInk) * scale - .0001,
+          ),
+        );
       }
     }
     final queries = ink.requested.length;
@@ -175,7 +206,10 @@ void main() {
   test('无批注可见行与不可读小字号不发起像素探针，范围框仍保留', () {
     final ink = _ControlledInkCache();
     final cache = ReadingGlyphPainterCache(inkCache: ink);
-    final text = List.generate(80, (index) => String.fromCharCode(0x4e00 + index)).join();
+    final text = List.generate(
+      80,
+      (index) => String.fromCharCode(0x4e00 + index),
+    ).join();
     final body = ReadingTextLayout(
       line: TextParser.parsePlainText(text).single,
       geometry: const ReadingTextGeometry(fontSize: 40, lineHeight: 1.5),
@@ -191,12 +225,21 @@ void main() {
     addTearDown(notes.dispose);
     addTearDown(body.dispose);
     addTearDown(cache.dispose);
-    expect(notes.rowsIn(Rect.fromLTWH(0, 0, 190, body.rows[1].bottom)).toList(), isEmpty);
+    expect(
+      notes.rowsIn(Rect.fromLTWH(0, 0, 190, body.rows[1].bottom)).toList(),
+      isEmpty,
+    );
     expect(notes.notesAt(const Offset(30, 30)), isEmpty);
     expect(ink.requested, isEmpty);
     expect(notes.rowAt(body.rows.length - 1).anchors, isNotEmpty);
-    final allowed = text.substring(body.rows[body.rows.length - 2].start).characters.toSet();
-    expect(ink.requested.every((request) => allowed.contains(request.text)), isTrue);
+    final allowed = text
+        .substring(body.rows[body.rows.length - 2].start)
+        .characters
+        .toSet();
+    expect(
+      ink.requested.every((request) => allowed.contains(request.text)),
+      isTrue,
+    );
 
     final smallInk = _ControlledInkCache();
     final smallCache = ReadingGlyphPainterCache(inkCache: smallInk);
@@ -224,7 +267,10 @@ void main() {
       ..complete(FontWeight.w400)
       ..complete(FontWeight.w700);
     final cache = ReadingGlyphPainterCache(inkCache: ink);
-    final text = List.generate(270, (index) => String.fromCharCode(0x4e00 + index)).join();
+    final text = List.generate(
+      270,
+      (index) => String.fromCharCode(0x4e00 + index),
+    ).join();
     final body = ReadingTextLayout(
       line: TextParser.parsePlainText(text).single,
       geometry: const ReadingTextGeometry(fontSize: 40, lineHeight: 1.5),
@@ -260,27 +306,34 @@ void main() {
     final cache = ReadingGlyphPainterCache(inkCache: ink);
     final key = GlobalKey<ReadingEmphasisLineState>();
     final line = TextParser.parsePlainText('abcdefghij').single;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.only(top: 60),
-          child: ReadingEmphasisLine(
-            key: key,
-            line: line,
-            geometry: const ReadingTextGeometry(fontSize: 48, lineHeight: 1.5),
-            presentation: const ReadingTextPresentation(currentIndex: 0),
-            glyphCache: cache,
-            width: 320,
-            direction: TextDirection.ltr,
-            annotations: [_note(0, 'a')],
-            annotationLeadingSpace: 60,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 60),
+            child: ReadingEmphasisLine(
+              key: key,
+              line: line,
+              geometry: const ReadingTextGeometry(
+                fontSize: 48,
+                lineHeight: 1.5,
+              ),
+              presentation: const ReadingTextPresentation(currentIndex: 0),
+              glyphCache: cache,
+              width: 320,
+              direction: TextDirection.ltr,
+              annotations: [_note(0, 'a')],
+              annotationLeadingSpace: 60,
+            ),
           ),
         ),
       ),
-    ));
+    );
     final state = key.currentState!;
     final body = state.debugLayout;
-    final rowMetrics = body.rows.map((row) => (row.start, row.end, row.height, row.baseline)).toList();
+    final rowMetrics = body.rows
+        .map((row) => (row.start, row.end, row.height, row.baseline))
+        .toList();
     final size = tester.getSize(find.byKey(key));
     var annotations = state.debugAnnotationLayout;
     for (final weight in [FontWeight.w400, FontWeight.w700]) {
@@ -291,7 +344,12 @@ void main() {
       expect(state.debugLayout, same(body));
       expect(state.debugLayoutBuildCount, 1);
       expect(tester.getSize(find.byKey(key)), size);
-      expect(body.rows.map((row) => (row.start, row.end, row.height, row.baseline)).toList(), rowMetrics);
+      expect(
+        body.rows
+            .map((row) => (row.start, row.end, row.height, row.baseline))
+            .toList(),
+        rowMetrics,
+      );
     }
     await tester.pumpWidget(const SizedBox.shrink());
     ink.complete(FontWeight.w400);
@@ -301,39 +359,63 @@ void main() {
 
   testWidgets('真实墨迹完成只刷新批注，正文像素、布局次数、换行、基线和滚动都不动', (tester) async {
     const lineText = 'Agjf 知识讲述与节奏';
-    final lines = TextParser.parsePlainText(List.filled(80, lineText).join('\n'));
-    final notes = [for (final line in lines) _note(line.characters.first.rawIndex, 'A')];
+    final lines = TextParser.parsePlainText(
+      List.filled(80, lineText).join('\n'),
+    );
+    final notes = [
+      for (final line in lines) _note(line.characters.first.rawIndex, 'A'),
+    ];
     final controller = ScrollController();
     final key = GlobalKey<TeleprompterTextLayerState>();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: TeleprompterTextLayer(
-          key: key,
-          scrollController: controller,
-          lines: lines,
-          currentIndex: 0,
-          fontSize: 48,
-          lineHeight: 1.5,
-          mirrorMode: false,
-          continuous: true,
-          annotations: notes,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TeleprompterTextLayer(
+            key: key,
+            scrollController: controller,
+            lines: lines,
+            currentIndex: 0,
+            fontSize: 48,
+            lineHeight: 1.5,
+            mirrorMode: false,
+            continuous: true,
+            annotations: notes,
+          ),
         ),
       ),
-    ));
+    );
     controller.jumpTo(900);
     await tester.pump();
     final viewport = tester.getRect(find.byKey(key));
-    final states = tester.stateList<ReadingEmphasisLineState>(find.byType(ReadingEmphasisLine)).where((state) {
-      final box = state.context.findRenderObject()! as RenderBox;
-      final top = box.localToGlobal(Offset.zero).dy;
-      return top >= viewport.top && top + box.size.height <= viewport.bottom;
-    }).toList();
+    final states = tester
+        .stateList<ReadingEmphasisLineState>(find.byType(ReadingEmphasisLine))
+        .where((state) {
+          final box = state.context.findRenderObject()! as RenderBox;
+          final top = box.localToGlobal(Offset.zero).dy;
+          return top >= viewport.top &&
+              top + box.size.height <= viewport.bottom;
+        })
+        .toList();
     expect(states, isNotEmpty);
     final layouts = {for (final state in states) state: state.debugLayout};
-    final annotationLayouts = {for (final state in states) state: state.debugAnnotationLayout};
-    final counts = {for (final state in states) state: state.debugLayoutBuildCount};
-    final rows = {for (final state in states) state: state.debugLayout.rows.map((row) => (row.start, row.end, row.top, row.height, row.baseline)).toList()};
-    final sizes = {for (final state in states) state: (state.context.findRenderObject()! as RenderBox).size};
+    final annotationLayouts = {
+      for (final state in states) state: state.debugAnnotationLayout,
+    };
+    final counts = {
+      for (final state in states) state: state.debugLayoutBuildCount,
+    };
+    final rows = {
+      for (final state in states)
+        state: state.debugLayout.rows
+            .map(
+              (row) => (row.start, row.end, row.top, row.height, row.baseline),
+            )
+            .toList(),
+    };
+    final sizes = {
+      for (final state in states)
+        state: (state.context.findRenderObject()! as RenderBox).size,
+    };
     final offset = controller.offset;
     final extent = controller.position.maxScrollExtent;
     final metrics = key.currentState!.debugMetricsBuildCount;
@@ -346,18 +428,36 @@ void main() {
     const probeStyle = TextStyle(fontSize: 21.25, color: Colors.white);
     final revision = cache.inkCache.revision;
     cache.inkCache.boundsFor(
-      '刷新证明', probeStyle, TextDirection.ltr,
+      '刷新证明',
+      probeStyle,
+      TextDirection.ltr,
       cache.painterFor('刷新证明', probeStyle, TextDirection.ltr),
     );
     await _settleInk(tester, cache);
     expect(cache.inkCache.revision, greaterThan(revision));
-    expect(states.any((state) => !identical(state.debugAnnotationLayout, annotationLayouts[state])), isTrue);
+    expect(
+      states.any(
+        (state) =>
+            !identical(state.debugAnnotationLayout, annotationLayouts[state]),
+      ),
+      isTrue,
+    );
     for (final state in states) {
       expect(state.mounted, isTrue);
       expect(state.debugLayout, same(layouts[state]));
       expect(state.debugLayoutBuildCount, counts[state]);
-      expect(state.debugLayout.rows.map((row) => (row.start, row.end, row.top, row.height, row.baseline)).toList(), rows[state]);
-      expect((state.context.findRenderObject()! as RenderBox).size, sizes[state]);
+      expect(
+        state.debugLayout.rows
+            .map(
+              (row) => (row.start, row.end, row.top, row.height, row.baseline),
+            )
+            .toList(),
+        rows[state],
+      );
+      expect(
+        (state.context.findRenderObject()! as RenderBox).size,
+        sizes[state],
+      );
     }
     expect(await _bodyPixels(tester, states.first), bodyPixels);
     expect(controller.offset, closeTo(offset, .001));
@@ -376,7 +476,14 @@ void main() {
     final body = ReadingTextLayout(
       line: ScriptLine(
         lineIndex: 0,
-        characters: const [ScriptCharacter(char: 'f', rawIndex: 0, italic: true, strikeThrough: true)],
+        characters: const [
+          ScriptCharacter(
+            char: 'f',
+            rawIndex: 0,
+            italic: true,
+            strikeThrough: true,
+          ),
+        ],
       ),
       geometry: const ReadingTextGeometry(fontSize: 64, lineHeight: 1.5),
       width: 250,
@@ -403,15 +510,23 @@ void main() {
             glyphCache: cache,
           ).paint(canvas, Size(body.width, body.height));
           final picture = recorder.endRecording();
-          final image = await picture.toImage((body.width * ratio).ceil(), (body.height * ratio).ceil());
-          final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!.buffer.asUint8List();
+          final image = await picture.toImage(
+            (body.width * ratio).ceil(),
+            (body.height * ratio).ceil(),
+          );
+          final bytes = (await image.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          ))!.buffer.asUint8List();
           var count = 0;
           var painted = 0;
           for (var y = 0; y < image.height; y++) {
             for (var x = 0; x < image.width; x++) {
               if (bytes[(y * image.width + x) * 4 + 3] == 0) continue;
               painted++;
-              if (!envelope.contains(Offset((x + .5) / ratio, (y + .5) / ratio))) count++;
+              if (!envelope.contains(
+                Offset((x + .5) / ratio, (y + .5) / ratio),
+              ))
+                count++;
             }
           }
           expect(painted, greaterThan(0));

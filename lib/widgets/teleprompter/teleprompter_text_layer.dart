@@ -1129,7 +1129,8 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         viewportHeight: viewportHeight,
         annotations: _lineAnnotations[index],
         showAnnotations: widget.showAnnotations,
-        annotationLeadingSpace: !widget.showAnnotations || _lineAnnotations[index].isEmpty
+        annotationLeadingSpace:
+            !widget.showAnnotations || _lineAnnotations[index].isEmpty
             ? 0
             : _annotationLeadingSpace(index, textWidth, viewportHeight),
         handleAnnotationLabelTaps: false,
