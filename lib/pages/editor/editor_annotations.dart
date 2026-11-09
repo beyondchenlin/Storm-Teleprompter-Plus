@@ -186,11 +186,11 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
       return null;
     final start = plain
         .substring(0, selection.start)
-        .replaceAll('\n', '')
+        .replaceAll(RegExp(r'[\n\u2028]'), '')
         .length;
     final quote = plain
         .substring(selection.start, selection.end)
-        .replaceAll('\n', '');
+        .replaceAll(RegExp(r'[\n\u2028]'), '');
     if (quote.trim().isEmpty) return null;
     final range = AnnotationRange(
       start: start,
@@ -345,7 +345,7 @@ mixin EditorAnnotations on State<EditorPage>, EditorLogic {
     int editorOffset(int raw) {
       var counted = 0;
       for (var i = 0; i < plain.length; i++) {
-        if (plain[i] == '\n') continue;
+        if (plain[i] == '\n' || plain[i] == '\u2028') continue;
         if (counted == raw) return i;
         counted++;
       }

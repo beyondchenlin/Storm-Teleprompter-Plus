@@ -83,8 +83,69 @@ mixin EditorLogic on State<EditorPage> {
       ),
     );
 
+    // The editor always stores paragraph HTML. Convert legacy plain-text
+    // offsets now, before a selection notification or title-only save can
+    // mistake removal of structural newlines for edits to annotated words.
+    final originalContent = contentController.text;
+    final initialHtml = _deltaToStorageHtml(
+      quillController.document.toDelta(),
+    );
+    _annotations = _normalizeInitialAnnotationAnchors(
+      originalContent,
+      initialHtml,
+      _annotations,
+    );
+    contentController.text = initialHtml;
+
     titleController.addListener(_markChanged);
     quillController.addListener(_onQuillContentChanged);
+  }
+
+  /// A known representation conversion, not a guessed textual diff. HTML
+  /// reading indices exclude line/paragraph separators while plain-text
+  /// indices include them. Every other UTF-16 unit retains its exact order.
+  List<ReadingAnnotation> _normalizeInitialAnnotationAnchors(
+    String previousContent,
+    String nextContent,
+    List<ReadingAnnotation> notes,
+  ) {
+    if (notes.isEmpty) return const [];
+    final before = AnnotationAnchors.bodyText(previousContent);
+    final after = AnnotationAnchors.bodyText(nextContent);
+    if (before == after) return AnnotationAnchors.validate(nextContent, notes);
+    final withoutBreaks = before.replaceAll(RegExp(r'[\n\u2028]'), '');
+    if (withoutBreaks != after) {
+      // Unsupported external markup must still fail conservatively. It must
+      // never borrow the position of another occurrence of the same words.
+      return AnnotationAnchors.remap(previousContent, nextContent, notes);
+    }
+    final positions = List<int>.filled(before.length + 1, 0);
+    var nextIndex = 0;
+    for (var index = 0; index < before.length; index++) {
+      positions[index] = nextIndex;
+      final unit = before.codeUnitAt(index);
+      if (unit != 0x0a && unit != 0x2028) nextIndex++;
+    }
+    positions[before.length] = nextIndex;
+    return List.unmodifiable(notes.map((note) {
+      if (!note.isAnchored) return note;
+      final ranges = <AnnotationRange>[];
+      for (final range in note.ranges) {
+        if (!AnnotationAnchors.matches(before, range)) {
+          return note.copyWith(unresolvedReason: '原文范围已失效，请重新选择字词');
+        }
+        final mapped = AnnotationRange(
+          start: positions[range.start],
+          end: positions[range.end],
+          quote: range.quote.replaceAll(RegExp(r'[\n\u2028]'), ''),
+        );
+        if (!AnnotationAnchors.matches(after, mapped)) {
+          return note.copyWith(unresolvedReason: '批注只对应换行或无法确认的原文，请重新选择字词');
+        }
+        ranges.add(mapped);
+      }
+      return note.copyWith(ranges: ranges);
+    }));
   }
 
   @override
@@ -522,7 +583,14 @@ mixin EditorLogic on State<EditorPage> {
         );
       }
       final tag = match.group(0) ?? '';
-      _applyInlineTagToAttributes(tag, attributes);
+      if (RegExp(r'^<br(?:\s|/?>)', caseSensitive: false).hasMatch(tag)) {
+        // U+2028 is a visual line break inside a Quill paragraph. A normal
+        // newline remains a paragraph boundary. Keeping these distinct also
+        // preserves paragraph-wide reading colour after a save/reopen.
+        delta.insert('\u2028', attributes.isEmpty ? null : Map<String, dynamic>.from(attributes));
+      } else {
+        _applyInlineTagToAttributes(tag, attributes);
+      }
       cursor = match.end;
     }
     if (cursor < html.length) {
@@ -535,7 +603,10 @@ mixin EditorLogic on State<EditorPage> {
     String text,
     Map<String, dynamic> attributes,
   ) {
-    final normalized = _decodeHtml(text).replaceAll(RegExp(r'[\r\n\t]+'), ' ');
+    // TextParser retains tabs and carriage returns as actual body characters.
+    // A literal line feed inside a paragraph is its soft line break, not a
+    // space. Do not silently rewrite imported words while opening the editor.
+    final normalized = _decodeHtml(text).replaceAll('\n', '\u2028');
     if (normalized.isEmpty) return;
     delta.insert(
       normalized,
@@ -611,15 +682,21 @@ mixin EditorLogic on State<EditorPage> {
 
       final attributes = operation.attributes ?? const <String, dynamic>{};
       final text = operation.data as String;
-      final parts = text.split('\n');
-      for (var i = 0; i < parts.length; i++) {
-        if (parts[i].isNotEmpty) {
-          current.write(_formatInlineHtml(parts[i], attributes));
+      var start = 0;
+      for (final separator in RegExp(r'[\n\u2028]').allMatches(text)) {
+        if (separator.start > start) {
+          current.write(_formatInlineHtml(text.substring(start, separator.start), attributes));
         }
-        if (i < parts.length - 1) {
+        if (separator.group(0) == '\u2028') {
+          current.write('<br>');
+        } else {
           paragraphs.add('<p>${current.toString()}</p>');
           current.clear();
         }
+        start = separator.end;
+      }
+      if (start < text.length) {
+        current.write(_formatInlineHtml(text.substring(start), attributes));
       }
     }
 
