@@ -154,6 +154,52 @@ void main() {
     expect(value.body.line.text, 'ABCDEFGH');
   });
 
+  test('两行备注在固定留白中逐级调大首选字号，实际字号不会反向变小', () {
+    const note = ReadingAnnotation(
+      id: 'monotonic-two-lines',
+      text: 'AB\nCD',
+      ranges: [AnnotationRange(start: 2, end: 3, quote: 'C')],
+    );
+    ReadingAnnotationLabel fit(double preferred) => _layout(
+      style: ReadingAnnotationStyle(fontFamily: 'Ahem', fontSize: preferred),
+      bandHeight: 26,
+      note: note,
+    ).notes.rowAt(0).labels.single;
+
+    // Reproduce the former candidate policy against real native text shaping.
+    // A candidate counts only when that exact size fits the complete note;
+    // the new renderer's smaller fallback cannot make an old candidate pass.
+    double oldSixStepResult(double preferred) {
+      for (var step = 0; step < 6; step++) {
+        final candidate = preferred - (preferred - 8) * step / 5;
+        final label = fit(candidate);
+        final actual = label.painter.text!.style!.fontSize!;
+        if (!label.isTruncated && (actual - candidate).abs() < .001) {
+          return actual;
+        }
+      }
+      fail('The fixed sample must fit its complete two-line note at 8px.');
+    }
+
+    final former20 = oldSixStepResult(20);
+    final former36 = oldSixStepResult(36);
+    expect(former36, lessThan(former20),
+      reason: 'The old proportional candidates skip a usable larger size.');
+
+    var previousActual = 0.0;
+    for (var preferred = 10; preferred <= 36; preferred++) {
+      final label = fit(preferred.toDouble());
+      final actual = label.painter.text!.style!.fontSize!;
+      expect(label.isTruncated, isFalse);
+      expect(label.painter.text!.toPlainText(), note.text);
+      expect(actual, inInclusiveRange(8.0, preferred.toDouble()));
+      expect(actual, greaterThanOrEqualTo(previousActual),
+        reason: 'Preferred $preferred must not reverse the previous size.');
+      previousActual = actual;
+    }
+    expect(previousActual, greaterThan(former36));
+  });
+
   testWidgets('字体字号颜色更新仅重绘批注，正文测量与正文像素逐项不变', (tester) async {
     final lineKey = GlobalKey<ReadingEmphasisLineState>();
     final line = TextParser.parsePlainText('ABCDEFGH').single;

@@ -406,12 +406,22 @@ class ReadingAnnotationLayout {
         '$shortened${sourceClipped ? '…' : ''}'
         '${anchor.notes.length > 1 ? ' · +${anchor.notes.length - 1}' : ''}';
     final canBeComplete = !sourceClipped && '\n'.allMatches(source).length < 3;
-    // At most six descending sizes. Prefer the largest candidate which fits
-    // the complete short cue; do not shrink a long explanation just to show
-    // a few more clipped characters. Its clearest valid preview is retained.
+    // Manual sizes use the same integer grid for every slider position. The
+    // old six proportional steps could skip a fitting size when the preferred
+    // size increased, making a larger request render smaller. At most 29
+    // candidates cover the supported 8..36px range, including its exact floor.
+    // Keep the original six steps for automatic sizing for compatibility.
+    // Prefer the largest complete short cue; a long explanation keeps its
+    // clearest valid preview rather than shrinking merely to show more text.
     final fontSizes = <double>{
-      for (var step = 0; step < 6; step++)
-        math.max(8, maximumFontSize - (maximumFontSize - 8) * step / 5),
+      if (style.fontSize == 0 || !style.fontSize.isFinite)
+        for (var step = 0; step < 6; step++)
+          math.max(8, maximumFontSize - (maximumFontSize - 8) * step / 5)
+      else ...[
+        maximumFontSize,
+        for (var size = maximumFontSize.floor(); size >= 8; size--)
+          size.toDouble(),
+      ],
     };
     ReadingAnnotationLabel? clearestPreview;
     final tip = anchor.frame.topCenter;
