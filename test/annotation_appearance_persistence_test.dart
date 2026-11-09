@@ -56,7 +56,7 @@ class _ArticlePreferences implements AppPreferences {
 
 void main() {
   group('批注外观设置模型', () {
-    test('旧设置保留原先的自动字号与颜色，也保留其它配置', () {
+    test('缺少批注外观字段时使用当前默认值，显式旧颜色保持原值', () {
       final settings = AppSettings.fromJson({
         'fontSize': 76,
         'asrModelId': 'installed-model',
@@ -67,9 +67,13 @@ void main() {
       );
       expect(settings.annotationFontFamily, '');
       expect(settings.annotationFontSize, 0);
-      expect(settings.annotationColor, 0xFF8BD1D0);
+      expect(settings.annotationColor, 0xFF8FA9B8);
       expect(settings.fontSize, 76);
       expect(settings.asrModelId, 'installed-model');
+      expect(
+        AppSettings.fromJson({'annotationColor': 0xFF8BD1D0}).annotationColor,
+        0xFF8BD1D0,
+      );
     });
 
     test('默认、稿件、会话与备份均保留三项外观', () {

@@ -22,7 +22,7 @@ class AppSettings {
   static const minCurrentCharScale = 1.0;
   static const maxCurrentCharScale = 1.15;
   static const defaultCurrentCharScale = 1.10;
-  static const defaultAnnotationColor = 0xFF8BD1D0;
+  static const defaultAnnotationColor = 0xFF8FA9B8;
   static const defaultAnnotationFontSize = 0.0;
   static const minAnnotationFontSize = 8.0;
   static const maxAnnotationFontSize = 36.0;
