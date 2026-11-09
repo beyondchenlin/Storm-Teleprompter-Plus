@@ -5,11 +5,11 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:pdfium_flutter/pdfium_flutter.dart';
-import 'package:xml/xml.dart';
 
 import '../../models/reading_annotation.dart';
 import 'import_batch.dart';
 import 'pdf_annotation_geometry.dart';
+import 'pdf_annotation_text.dart';
 
 class PdfImportException implements Exception {
   const PdfImportException(this.message, {this.nativeCode});
@@ -394,13 +394,7 @@ String _readNoteText(PDFium pdfium, FPDF_ANNOTATION annot) {
   if (text.trim().isEmpty) {
     final rich = _readString(pdfium, annot, 'RC');
     if (rich.trim().isNotEmpty) {
-      try {
-        text = XmlDocument.parse(rich.replaceAll('&nbsp;', '&#160;')).innerText;
-      } on XmlParserException {
-        // Retain the original rich content instead of inventing note text or
-        // discarding a comment whose producer omitted its plain-text Contents.
-        text = rich;
-      }
+      text = extractPdfRichAnnotationText(rich);
     }
   }
   return text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
