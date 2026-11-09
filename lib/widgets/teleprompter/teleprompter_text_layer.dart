@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
@@ -13,6 +14,22 @@ import 'measured_line_delegate.dart';
 import 'reading_emphasis_text.dart';
 import 'reading_annotation_layer.dart';
 import 'reading_area_frame.dart';
+
+/// A line identity is local to its viewport, even when two previews share the
+/// same parsed source. New key objects can resolve a mounted line without an
+/// unbounded registry of keys for every line in a long manuscript.
+class _ReadingLineKey extends GlobalObjectKey<ReadingEmphasisLineState> {
+  final Object viewport;
+
+  const _ReadingLineKey(super.value, this.viewport);
+
+  @override
+  bool operator ==(Object other) => other is _ReadingLineKey &&
+      identical(value, other.value) && identical(viewport, other.viewport);
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(value), identityHashCode(viewport));
+}
 
 /// 提词器文本渲染层（懒加载 + 实际行高定位）。
 ///
@@ -168,6 +185,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
   List<ReadingAnnotation>? _indexedAnnotations;
   List<List<ReadingAnnotation>> _lineAnnotations = const [];
   final Map<int, double> _annotationLeadingSpaces = {};
+  bool _annotationTapHandled = false;
   ReadingTextLayout? _navigationLayout;
   int _metricsBuildCount = 0;
   List<ScriptLine>? _intrinsicWidthLines;
@@ -963,7 +981,9 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         _lastTopPadding = _topPad(viewportHeight);
         if (viewportChanged) _scheduleViewportRealignment(anchor);
 
-        return ClipRect(
+        return Listener(
+          onPointerDown: _handleAnnotationPointerDown,
+          child: ClipRect(
           child: Transform(
             alignment: Alignment.center,
             transform: widget.mirrorMode
@@ -1049,6 +1069,7 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
               ],
             ),
           ),
+          ),
         );
       },
     );
@@ -1064,13 +1085,16 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: _lineVerticalPadding),
       child: ReadingEmphasisLine(
+        key: _ReadingLineKey(line, this),
         line: line,
         geometry: _textGeometry,
         presentation: _textPresentation,
         glyphCache: _glyphCache,
         width: textWidth,
         direction: Directionality.of(context),
-        onCharTap: widget.onCharTap,
+        onCharTap: (rawIndex) {
+          if (!_annotationTapHandled) widget.onCharTap?.call(rawIndex);
+        },
         scrollController: widget.scrollController,
         contentTop:
             _topPad(viewportHeight) + _lineTops[index] + _lineVerticalPadding,
@@ -1080,8 +1104,33 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
         annotationLeadingSpace: _lineAnnotations[index].isEmpty
             ? 0
             : _annotationLeadingSpace(index, textWidth, viewportHeight),
+        handleAnnotationLabelTaps: false,
       ),
     );
+  }
+
+  void _handleAnnotationPointerDown(PointerDownEvent event) {
+    _annotationTapHandled = false;
+    if (!widget.showAnnotations ||
+        widget.annotations.isEmpty ||
+        event.buttons != kPrimaryButton ||
+        !widget.scrollController.hasClients ||
+        _lineTops.isEmpty) return;
+    final render = context.findRenderObject();
+    if (render is! RenderBox) return;
+    final local = render.globalToLocal(event.position);
+    final contentY = local.dy + widget.scrollController.offset - _lastTopPadding;
+    final current = _findLineForContentOffset(contentY);
+    // A following line borrows only its immediate predecessor's empty space.
+    for (var index = current; index <= current + 1 && index < widget.lines.length; index++) {
+      final state = _ReadingLineKey(widget.lines[index], this).currentState;
+      final box = state?.context.findRenderObject();
+      if (state != null && box is RenderBox &&
+          state.openAnnotationLabelAt(box.globalToLocal(event.position))) {
+        _annotationTapHandled = true;
+        return;
+      }
+    }
   }
 
   /// Resolve note intervals to authored lines once. A cursor or visibility

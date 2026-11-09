@@ -278,10 +278,10 @@ class ReadingAnnotationLayout {
         void finish() {
           if (segment == null) return;
           final frame = Rect.fromLTRB(
-            math.max(.75, segment!.left + .4),
-            math.max(-leadingSpace + .75, segment!.top - _clearance),
-            math.min(textLayout.width - .75, segment!.right - .4),
-            math.min(textLayout.height - .75, segment!.bottom + _clearance),
+            math.max(.75, segment.left + .4),
+            math.max(-leadingSpace + .75, segment.top - _clearance),
+            math.min(textLayout.width - .75, segment.right - .4),
+            math.min(textLayout.height - .75, segment.bottom + _clearance),
           );
           if (frame.isEmpty) return;
           (notesByFrame[frame] ??= []).add(entry.key);
@@ -289,7 +289,7 @@ class ReadingAnnotationLayout {
         }
         for (final i in selected) {
           final bounds = envelope.bounds[i];
-          if (segment != null && bounds.left > segment!.right + .5) {
+          if (segment != null && bounds.left > segment.right + .5) {
             finish();
             segment = null;
             fontSize = 0;

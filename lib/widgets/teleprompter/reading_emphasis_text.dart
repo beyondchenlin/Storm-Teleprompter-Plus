@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../models/app_settings.dart';
 import '../../models/reading_annotation.dart';
@@ -799,6 +800,8 @@ class ReadingEmphasisLine extends StatefulWidget {
   /// Empty space already present above this authored line. It extends only
   /// the foreground paint layer; it never changes this widget's layout size.
   final double annotationLeadingSpace;
+  final bool handleAnnotationLabelTaps;
+  final ValueChanged<List<ReadingAnnotation>>? onAnnotationsTap;
 
   const ReadingEmphasisLine({
     super.key,
@@ -815,6 +818,8 @@ class ReadingEmphasisLine extends StatefulWidget {
     this.annotations = const [],
     this.showAnnotations = true,
     this.annotationLeadingSpace = 0,
+    this.handleAnnotationLabelTaps = true,
+    this.onAnnotationsTap,
   });
 
   @override
@@ -832,6 +837,16 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   int get debugLayoutBuildCount => _layoutBuildCount;
   @visibleForTesting
   ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
+
+  /// The scroll viewport also calls this for labels painted into the preceding
+  /// line's existing whitespace, which lies outside this render box's hit area.
+  bool openAnnotationLabelAt(Offset position) {
+    if (!widget.showAnnotations) return false;
+    final notes = _annotations?.notesAt(position, labelsOnly: true);
+    if (notes == null || notes.isEmpty) return false;
+    _showNotes(notes);
+    return true;
+  }
 
   void _createLayout() {
     _layout = ReadingTextLayout(
@@ -892,6 +907,10 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   }
 
   void _showNotes(List<ReadingAnnotation> notes) {
+    if (widget.onAnnotationsTap case final callback?) {
+      callback(notes);
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -934,8 +953,8 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
     cursor: SystemMouseCursors.click,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        final notes = widget.showAnnotations
+      onTapUp: (details) {
+        final notes = widget.showAnnotations && widget.handleAnnotationLabelTaps
             ? _annotations?.notesAt(details.localPosition, labelsOnly: true)
             : null;
         if (notes != null && notes.isNotEmpty) {
