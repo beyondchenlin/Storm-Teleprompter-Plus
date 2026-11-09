@@ -12,6 +12,8 @@ import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_annotation_
 import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_emphasis_text.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/teleprompter_text_layer.dart';
 
+import 'support/reading_ink_test_utils.dart';
+
 ReadingAnnotation _note(
   String body,
   int start,
@@ -296,7 +298,7 @@ void main() {
     // Settle the independent ink refinement before testing visibility alone.
     // A genuine native completion is allowed to rebuild annotation geometry.
     key.currentState!.debugAnnotationLayout!.rowAt(0);
-    await tester.runAsync(() => cache.inkCache.settled);
+    await settleReadingInk(tester, cache.inkCache);
     await tester.pump();
     final annotationGeometry = key.currentState!.debugAnnotationLayout;
     final size = tester.getSize(find.byKey(key));

@@ -11,6 +11,8 @@ import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_emphasis_te
 import 'package:storm_teleprompter_plus/widgets/teleprompter/reading_glyph_ink_cache.dart';
 import 'package:storm_teleprompter_plus/widgets/teleprompter/teleprompter_text_layer.dart';
 
+import 'support/reading_ink_test_utils.dart';
+
 class _ControlledInkCache extends ReadingGlyphInkCache {
   final readyWeights = <FontWeight>{};
   final requested = <({String text, TextStyle style})>[];
@@ -60,17 +62,7 @@ ReadingAnnotation _note(int start, String quote) => ReadingAnnotation(
 Future<void> _settleInk(
   WidgetTester tester,
   ReadingGlyphPainterCache cache,
-) async {
-  for (var pass = 0; pass < 8; pass++) {
-    await tester.runAsync(() => cache.inkCache.settled);
-    await tester.pump();
-    if (cache.inkCache.debugPendingCount == 0) {
-      await tester.pump();
-      if (cache.inkCache.debugPendingCount == 0) return;
-    }
-  }
-  fail('可见字形墨迹测量未在有界轮次内完成');
-}
+) => settleReadingInk(tester, cache.inkCache);
 
 Future<List<int>> _bodyPixels(
   WidgetTester tester,
@@ -351,6 +343,42 @@ void main() {
         rowMetrics,
       );
     }
+    final tail = ReadingAnnotationLayout.trailingSpace(body, cache);
+    final measurements = ink.requested.length;
+    expect(
+      state.annotationTrailingSpaceFor(
+        geometry: body.geometry,
+        width: body.width,
+        direction: body.direction,
+      ),
+      tail,
+    );
+    expect(ink.requested.length, measurements);
+    expect(
+      state.annotationTrailingSpaceFor(
+        geometry: body.geometry,
+        width: body.width + 1,
+        direction: body.direction,
+      ),
+      isNull,
+    );
+    expect(
+      state.annotationTrailingSpaceFor(
+        geometry: const ReadingTextGeometry(fontSize: 49, lineHeight: 1.5),
+        width: body.width,
+        direction: body.direction,
+      ),
+      isNull,
+    );
+    expect(
+      state.annotationTrailingSpaceFor(
+        geometry: body.geometry,
+        width: body.width,
+        direction: TextDirection.rtl,
+      ),
+      isNull,
+    );
+    expect(ink.requested.length, measurements);
     await tester.pumpWidget(const SizedBox.shrink());
     ink.complete(FontWeight.w400);
     expect(tester.takeException(), isNull);
@@ -468,7 +496,7 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
-    await tester.runAsync(() => cache.inkCache.settled);
+    await _settleInk(tester, cache);
   });
 
   testWidgets('真实正文画布在普通、粗体、装饰和中间缩放比例下均位于最终墨迹包络内', (tester) async {
@@ -539,6 +567,6 @@ void main() {
     }
     body.dispose();
     cache.dispose();
-    await tester.runAsync(() => cache.inkCache.settled);
+    await _settleInk(tester, cache);
   });
 }

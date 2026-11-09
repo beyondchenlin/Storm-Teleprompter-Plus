@@ -1268,12 +1268,18 @@ class TeleprompterTextLayerState extends State<TeleprompterTextLayer>
     }
     return _annotationLeadingSpaces.putIfAbsent(index, () {
       final previous = widget.lines[index - 1];
+      final direction = Directionality.of(context);
       final blank = previous.characters.isEmpty
           ? _textGeometry.emptyHeight
-          : ReadingAnnotationLayout.trailingSpace(
-              _layoutForLine(previous, textWidth, Directionality.of(context)),
-              _glyphCache,
-            );
+          : _ReadingLineKey(previous, this).currentState?.annotationTrailingSpaceFor(
+                geometry: _textGeometry,
+                width: textWidth,
+                direction: direction,
+              ) ??
+              ReadingAnnotationLayout.trailingSpace(
+                _layoutForLine(previous, textWidth, direction),
+                _glyphCache,
+              );
       return math.min(cap, blank + _lineVerticalPadding * 2);
     });
   }

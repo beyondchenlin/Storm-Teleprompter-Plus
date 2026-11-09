@@ -391,24 +391,8 @@ class ReadingAnnotationLayout {
     List<Rect> bodyBounds,
     List<Rect> occupied,
   ) {
-    // Keep the approved small-note proportion. Do not enlarge tiny notes into
-    // the manuscript or reduce them into unreadable dots to force a fit.
-    final fontSize = anchor.bodyFontSize * .22;
-    if (fontSize < 8 || band.isEmpty) return null;
-    final style = TextStyle(
-      fontSize: fontSize,
-      height: ui.kTextHeightNone,
-      color: readingAnnotationColor,
-      fontWeight: FontWeight.w400,
-      fontFamily: textLayout.geometry.fontFamily.isEmpty
-          ? null
-          : textLayout.geometry.fontFamily,
-    );
-    final lineHeight = glyphCache
-        .painterFor('国', style, TextDirection.ltr)
-        .height;
-    final maxLines = math.min(3, ((band.height - 2.5) / lineHeight).floor());
-    if (maxLines < 1) return null;
+    final maximumFontSize = anchor.bodyFontSize * .22;
+    if (maximumFontSize < 8 || band.isEmpty) return null;
     final source = anchor.notes.first.text.trim().replaceAll('\r\n', '\n');
     final characters = source.characters;
     final shortened = characters.take(maximumPreviewGraphemes).toString();
@@ -416,62 +400,97 @@ class ReadingAnnotationLayout {
     final preview =
         '$shortened${sourceClipped ? '…' : ''}'
         '${anchor.notes.length > 1 ? ' · +${anchor.notes.length - 1}' : ''}';
-    final preferredWidth = math.min(textLayout.width * .55, fontSize * 14);
+    final canBeComplete = !sourceClipped && '\n'.allMatches(source).length < 3;
+    // At most six descending sizes. Prefer the largest candidate which fits
+    // the complete short cue; do not shrink a long explanation just to show
+    // a few more clipped characters. Its clearest valid preview is retained.
+    final fontSizes = <double>{
+      for (var step = 0; step < 6; step++)
+        math.max(8, maximumFontSize - (maximumFontSize - 8) * step / 5),
+    };
+    ReadingAnnotationLabel? clearestPreview;
     final tip = anchor.frame.topCenter;
-    for (final factor in const [1.0, .72, .5]) {
-      final width = preferredWidth * factor;
-      if (width < fontSize * 2) continue;
-      final painter = TextPainter(
-        text: TextSpan(text: preview, style: style),
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-        textScaler: TextScaler.noScaling,
-        maxLines: maxLines,
-        ellipsis: '…',
-      )..layout(maxWidth: width);
-      final minimumRise = math.max(2.5, tip.dy - band.bottom);
-      final availableRise = tip.dy - band.top - painter.height;
-      if (availableRise < minimumRise) {
-        painter.dispose();
-        continue;
+    for (final fontSize in fontSizes) {
+      final style = TextStyle(
+        fontSize: fontSize,
+        height: ui.kTextHeightNone,
+        color: readingAnnotationColor,
+        fontWeight: FontWeight.w400,
+        fontFamily: textLayout.geometry.fontFamily.isEmpty
+            ? null
+            : textLayout.geometry.fontFamily,
+      );
+      final lineHeight = glyphCache
+          .painterFor('国', style, TextDirection.ltr)
+          .height;
+      final maxLines = math.min(3, ((band.height - 2.5) / lineHeight).floor());
+      if (maxLines < 1) continue;
+      final preferredWidth = math.min(textLayout.width * .55, fontSize * 14);
+      for (final factor in const [1.0, .72, .5]) {
+        final width = preferredWidth * factor;
+        if (width < fontSize * 2) continue;
+        final painter = TextPainter(
+          text: TextSpan(text: preview, style: style),
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.center,
+          textScaler: TextScaler.noScaling,
+          maxLines: maxLines,
+          ellipsis: '…',
+        )..layout(maxWidth: width);
+        final minimumRise = math.max(2.5, tip.dy - band.bottom);
+        final availableRise = tip.dy - band.top - painter.height;
+        if (availableRise < minimumRise) {
+          painter.dispose();
+          continue;
+        }
+        final rise = math.min(
+          availableRise,
+          math.max(minimumRise, fontSize * .75),
+        );
+        final run = rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);
+        // Only the right boundary mirrors a leader. A collision does not send
+        // the reader hunting for a note on an unrelated side of the word.
+        final mirrored = tip.dx + run + painter.width / 2 > band.right;
+        final centerX = tip.dx + (mirrored ? -run : run);
+        final rect = Rect.fromLTWH(
+          centerX - painter.width / 2,
+          tip.dy - rise - painter.height,
+          painter.width,
+          painter.height,
+        );
+        final leaderBounds = Rect.fromPoints(rect.bottomCenter, tip).inflate(.75);
+        final occupiedBounds = rect
+            .expandToInclude(leaderBounds)
+            .inflate(_clearance);
+        if (rect.left < band.left ||
+            rect.right > band.right ||
+            rect.top < band.top - .01 ||
+            rect.bottom > band.bottom + .01 ||
+            occupied.any((other) => other.overlaps(occupiedBounds)) ||
+            bodyBounds.any((body) => body.overlaps(leaderBounds))) {
+          painter.dispose();
+          continue;
+        }
+        final label = ReadingAnnotationLabel(
+          anchor: anchor,
+          rect: rect,
+          painter: painter,
+          mirrored: mirrored,
+          isTruncated: sourceClipped || painter.didExceedMaxLines,
+        );
+        if (!label.isTruncated) {
+          clearestPreview?.dispose();
+          return label;
+        }
+        if (clearestPreview == null) {
+          clearestPreview = label;
+        } else {
+          label.dispose();
+        }
+        if (!canBeComplete) return clearestPreview;
       }
-      final rise = math.min(
-        availableRise,
-        math.max(minimumRise, fontSize * .75),
-      );
-      final run = rise / math.tan(readingAnnotationLeaderAngle * math.pi / 180);
-      // Only the right boundary mirrors a leader. A collision does not send
-      // the reader hunting for a note on an unrelated side of the word.
-      final mirrored = tip.dx + run + painter.width / 2 > band.right;
-      final centerX = tip.dx + (mirrored ? -run : run);
-      final rect = Rect.fromLTWH(
-        centerX - painter.width / 2,
-        tip.dy - rise - painter.height,
-        painter.width,
-        painter.height,
-      );
-      final leaderBounds = Rect.fromPoints(rect.bottomCenter, tip).inflate(.75);
-      final occupiedBounds = rect
-          .expandToInclude(leaderBounds)
-          .inflate(_clearance);
-      if (rect.left < band.left ||
-          rect.right > band.right ||
-          rect.top < band.top - .01 ||
-          rect.bottom > band.bottom + .01 ||
-          occupied.any((other) => other.overlaps(occupiedBounds)) ||
-          bodyBounds.any((body) => body.overlaps(leaderBounds))) {
-        painter.dispose();
-        continue;
-      }
-      return ReadingAnnotationLabel(
-        anchor: anchor,
-        rect: rect,
-        painter: painter,
-        mirrored: mirrored,
-        isTruncated: sourceClipped || painter.didExceedMaxLines,
-      );
     }
-    return null;
+    return clearestPreview;
   }
 
   int _rowIndex(double y) {

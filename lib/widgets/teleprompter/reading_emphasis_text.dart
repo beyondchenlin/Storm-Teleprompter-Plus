@@ -970,6 +970,23 @@ class ReadingEmphasisLineState extends State<ReadingEmphasisLine> {
   @visibleForTesting
   ReadingAnnotationLayout? get debugAnnotationLayout => _annotations;
 
+  /// Reuse a mounted predecessor's immutable layout when another authored
+  /// line borrows its empty tail. During a font/viewport update the parent can
+  /// temporarily build ahead of this child; reject stale geometry then.
+  double? annotationTrailingSpaceFor({
+    required ReadingTextGeometry geometry,
+    required double width,
+    required TextDirection direction,
+  }) {
+    if (!mounted ||
+        _layout.geometry != geometry ||
+        _layout.width != width ||
+        _layout.direction != direction) {
+      return null;
+    }
+    return ReadingAnnotationLayout.trailingSpace(_layout, widget.glyphCache);
+  }
+
   /// The scroll viewport also calls this for labels painted into the preceding
   /// line's existing whitespace, which lies outside this render box's hit area.
   bool openAnnotationLabelAt(Offset position) =>
