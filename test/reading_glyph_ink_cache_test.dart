@@ -287,11 +287,17 @@ void main() {
         retriedBounds = cache.boundsFor('B', _style, TextDirection.ltr, normal);
       });
       try {
-        expect(cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped), isNull);
+        expect(
+          cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped),
+          isNull,
+        );
         expect(cache.boundsFor('B', _style, TextDirection.ltr, normal), isNull);
         expect(cache.debugPendingCount, 1);
         await cache.settled;
-        expect(cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped), isNull);
+        expect(
+          cache.boundsFor('A', clippedStyle, TextDirection.ltr, clipped),
+          isNull,
+        );
         expect(retriedBounds, isNotNull);
         expect(retriedBounds!.isEmpty, isFalse);
         expect(notifications, 2);
